@@ -1,0 +1,126 @@
+For all designs I ask you to make, have them be beautiful, not cookie cutter. Make webpages that are fully featured and worthy for production.
+
+By default, this template supports JSX syntax with Tailwind CSS classes, React hooks, and Lucide React for icons. Do not install other packages for UI themes, icons, etc unless absolutely necessary or I request them.
+
+Use icons from lucide-react for logos.
+
+# ❄️ Frostie – Smart Freezer Assistant
+
+## 📌 Problem & Purpose
+
+**"My freezer is full. How would you approach better tracking of frozen items and also ways to use them before they go bad?"**
+
+Frostie is a web app that helps users track freezer inventory, reduce food waste, and discover meal ideas using AI.
+
+## 🚀 Development Phases
+
+### Phase 1: Functional UI Prototype (Current Focus)
+- Create fully responsive UI components
+- Implement CRUD operations using browser storage (localStorage/IndexedDB)
+- Build working user flows with temporary data persistence
+- Enable all core features with mock AI responses
+- Use placeholder images for recipe suggestions and food items
+
+### Phase 2: Backend Integration (Future Work)
+- Connect authentication (Google Sign-in)
+- Integrate Supabase for data persistence
+- Implement Gemini API for AI features
+- Connect Unsplash/Pexels APIs for food and recipe images
+- Replace mock functions with actual API calls
+
+## 📱 Responsive Layout
+
+- **Desktop**: Left sidebar navigation
+- **Mobile**: Bottom tab navigation
+- **Components**: Cards, lists, input fields, modals
+
+## 📋 Core Pages
+
+### 🏠 Home
+- Universal input box (text, image upload, barcode scan, voice input) for adding items to freezer
+- Quick summary panels:
+    - Expiring items (next 7 days)
+    - Shopping list preview (3 items)
+    - Suggested meals (2-3 ideas)
+- Guest mode notice and sign-in CTA
+- Freezer tips
+
+### 🧊 Freezer
+- Filterable inventory list with edit/delete options
+- Same universal input as Home
+- Item cards showing: name, quantity, size, tags, category, expiration date
+- Sort by: expiration date, name, category
+
+### 🛒 Shopping
+- Checklist-style grocery list
+- Basic add/remove/complete functionality
+- Group by category option
+
+### 🍲 Ideas
+- Grid of meal suggestions using freezer items
+- Each card: title, description, image, ingredient matches
+- Save/favorite/delete options
+- Filter by dietary preferences
+
+### ⚙️ Settings
+- Authentication UI (Google/Email)
+- Dietary preferences toggles
+- Default expiration settings by food category
+- Theme options (System, Dark, Light)
+
+## 🗃️ Data Structure & Storage (Phase 1)
+- Define clear data models for freezer items, shopping list, saved meals
+- Implement localStorage/IndexedDB for temporary storage
+- Create utility functions for CRUD operations
+- Include image placeholder references in data models
+
+## ⚙️ Core Functionality (Phase 1)
+- Complete item management (add/edit/delete freezer items)
+- Date tracking with expiration notifications
+- Basic search and filtering
+- Simple meal suggestions based on current inventory
+- Mock AI responses for text parsing and recipe suggestions
+
+## 🤖 AI Features (Mock Now, Connect Later)
+
+- **Text parsing**: Extract item details from natural language
+- **Recipe generation**: Create meal ideas from inventory
+- **Image recognition**: Add items via photo or barcode scan
+- **Smart sorting**: Prioritize expiring items
+
+## 🔐 Data & Authentication
+
+- **Phase 1**: Browser storage only (localStorage/IndexedDB)
+- **Phase 2**: Supabase for auth and database
+- Google and Email sign-in options
+
+## ♿ Accessibility Requirements
+
+- Semantic HTML with proper heading hierarchy
+- ARIA labels for all interactive elements and icon buttons
+- Keyboard navigation support
+- Color contrast meeting WCAG AA standards
+- Screen reader compatible components
+- Focus indicators
+
+## 🧩 Component Structure
+
+- **Input Component**: Universal input with input type buttons on the bottom
+- **Item Card**: Reusable across freezer and meal ideas
+- **Navigation**: Responsive sidebar/bottom tab component
+- **Modal**: Reusable for adding/editing items
+- **List View**: Configurable for different data types
+
+## 🎨 UI Notes
+
+- Clean, minimal interface with mostly white background and frost/ice accent
+- Consistent card and list styling
+- Clear hierarchy of information
+- High contrast for readability
+- Visual indicators for expiration dates
+
+## 🧩 Component Implementation Notes
+- Build reusable components with props for data injection
+- Create service modules that initially use browser storage but can be swapped with API services later
+- Design components to easily transition from placeholder images to API-sourced images
+- Document all temporary storage functions for future replacement
