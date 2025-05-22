@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Calendar, Tag, Plus, XCircle } from 'lucide-react';
+import { X, Calendar, Tag, Plus, XCircle, Image } from 'lucide-react';
 import { FreezerItem } from '../types';
 import AccessibleDatepicker from './AccessibleDatepicker';
 import { getCategories } from '../data/categories';
@@ -10,6 +10,7 @@ interface EditFreezerItemModalProps {
   onClose: () => void;
   onSave: (updatedItem: FreezerItem) => void;
   categories: string[];
+  source?: 'text' | 'voice' | 'image' | 'barcode' | 'manual'; // Added source prop
 }
 
 const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
@@ -17,7 +18,8 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  categories: propCategories
+  categories: propCategories,
+  source = 'manual' // Default to 'manual' if not specified
 }) => {
   const [name, setName] = useState(item.name);
   const [category, setCategory] = useState(item.category);
@@ -27,6 +29,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
   const [notes, setNotes] = useState(item.notes);
   const [tags, setTags] = useState<string[]>(item.tags || []);
   const [tagInput, setTagInput] = useState('');
+  const [imageUrl, setImageUrl] = useState(item.imageUrl || '');
   
   const modalRef = useRef<HTMLDivElement>(null);
   const initialFocusRef = useRef<HTMLInputElement>(null);
@@ -35,6 +38,9 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
   const allCategories = propCategories.length > 0 
     ? propCategories 
     : getCategories();
+
+  // Check if the image field should be shown
+  const showImageField = source === 'image' || source === 'barcode' || source === 'manual' || !!item.imageUrl;
 
   useEffect(() => {
     // Initialize the state when the modal opens
@@ -46,6 +52,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       setExpirationDate(new Date(item.expirationDate));
       setNotes(item.notes);
       setTags(item.tags || []);
+      setImageUrl(item.imageUrl || '');
       setTagInput('');
       
       // Focus on the first input when the modal opens
@@ -66,7 +73,8 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       size,
       expirationDate,
       tags,
-      notes
+      notes,
+      imageUrl
     };
 
     onSave(updatedItem);
@@ -206,6 +214,42 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                   minDate={new Date()}
                 />
               </div>
+              
+              {showImageField && (
+                <div>
+                  <label htmlFor={`imageUrl-${item.id}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Item Image
+                  </label>
+                  <div className="flex items-center">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        id={`imageUrl-${item.id}`}
+                        value={imageUrl}
+                        onChange={(e) => setImageUrl(e.target.value)}
+                        placeholder="https://example.com/image.jpg"
+                        className="hidden w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                      />
+                      <Image className="absolute right-3 top-2.5 text-slate-400 dark:text-slate-500" size={16} aria-hidden="true" />
+                    </div>
+                  </div>
+                  {imageUrl && (
+                    <div className="mt-2">
+                      <div className="relative w-full h-32 bg-slate-100 dark:bg-slate-700 rounded-md overflow-hidden">
+                        <img 
+                          src={imageUrl} 
+                          alt={name} 
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // If image fails to load, hide it
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               
               <div>
                 <label htmlFor={`tags-${item.id}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">

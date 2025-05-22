@@ -33,6 +33,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
   const [isParsing, setIsParsing] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('inactive');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,6 +77,8 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0 && onImageUpload) {
+      const file = files[0];
+      setSelectedFile(file);
       setIsUploading(true);
       setUploadProgress(0);
       
@@ -93,10 +96,11 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
             setUploadProgress(0);
             setIsParsing(true); // Start parsing animation
             setIsTyping(true); // Show send button instead of voice input
-            onImageUpload(files[0])
+            onImageUpload(file)
               .finally(() => {
                 setIsParsing(false); // End parsing animation regardless of result
                 setIsTyping(false); // Reset typing state if no text was entered
+                setSelectedFile(null); // Clear selected file
               });
             e.target.value = '';
           }, 300);
@@ -285,8 +289,13 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
+      
+      // Clean up any object URLs created for file previews
+      if (selectedFile) {
+        URL.revokeObjectURL(URL.createObjectURL(selectedFile));
+      }
     };
-  }, []);
+  }, [selectedFile]);
 
   // Update placeholder text based on voice state
   const getPlaceholderText = () => {
@@ -310,7 +319,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
         role="search"
         aria-label="Add items to freezer"
         style={{ 
-          ...(isUploading ? {'--progress-width': `${uploadProgress}%`} as React.CSSProperties : {}) 
+          ...(isUploading ? {'--progress-width': `${uploadProgress.toString()}%`} as React.CSSProperties : {}) 
         }}
       >
         {isUploading && (

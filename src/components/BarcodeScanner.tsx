@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useReducer, useCallback } from 'react';
-import { X, CameraOff, AlertCircle, Loader, Camera } from 'lucide-react';
+import { X, CameraOff, AlertCircle, Loader, Camera, CheckCircle, Square } from 'lucide-react';
 import Quagga from '@ericblade/quagga2';
-import { searchOpenFoodFacts } from '../api/supabase';
-import { validateBarcode, getBarcodeFormat, calculateBarcodeConfidence } from '../utils/barcodeUtils';
+import { searchOpenFoodFacts, extractBarcodeFromImage } from '../api/supabase';
+import { validateBarcode, getBarcodeFormat, calculateBarcodeConfidence, attemptBarcodeRepair, areSimilarBarcodes } from '../utils/barcodeUtils';
 
 interface BarcodeScannerProps {
   onClose: () => void;
@@ -22,6 +22,9 @@ interface ScannerState {
   barcodeConfidence: number;
   detectionCount: number;
   lastScans: string[];
+  isCapturing: boolean;
+  frameUrl: string | null;
+  cameraReady: boolean;
 }
 
 type ScannerAction =
@@ -29,13 +32,16 @@ type ScannerAction =
   | { type: 'CAMERA_PERMISSION_DENIED' }
   | { type: 'CAMERA_INITIALIZED' }
   | { type: 'CAMERA_INITIALIZATION_FAILED'; error: string }
-  | { type: 'BARCODE_DETECTION'; barcode: string; confidence: number }
+  | { type: 'CAMERA_READY' }
+  | { type: 'START_CAPTURING' }
+  | { type: 'FRAME_CAPTURED'; frameUrl: string }
+  | { type: 'BARCODE_DETECTION'; barcode: string }
   | { type: 'BARCODE_CONFIRMED'; barcode: string }
   | { type: 'PRODUCT_SEARCH_START' }
   | { type: 'PRODUCT_SEARCH_SUCCESS' }
   | { type: 'PRODUCT_SEARCH_FAILED' }
   | { type: 'RESET_SCANNER' }
-  | { type: 'SET_ERROR'; error: string };
+  | { type: 'PROCESSING_FAILED'; error: string };
 
 // Reducer function for scanner state
 function scannerReducer(state: ScannerState, action: ScannerAction): ScannerState {
@@ -49,9 +55,12 @@ function scannerReducer(state: ScannerState, action: ScannerAction): ScannerStat
         ...state,
         scanActive: true,
         hasCamera: true,
-        error: null,
-        detectionCount: 0,
-        lastScans: []
+        error: null
+      };
+    case 'CAMERA_READY':
+      return {
+        ...state,
+        cameraReady: true
       };
     case 'CAMERA_INITIALIZATION_FAILED':
       return {
@@ -60,18 +69,26 @@ function scannerReducer(state: ScannerState, action: ScannerAction): ScannerStat
         hasCamera: false,
         error: action.error
       };
-    case 'BARCODE_DETECTION':
-      // Add the new scan to our lastScans array (keeping most recent 5)
-      const newScans = [...state.lastScans, action.barcode].slice(-5);
-
+    case 'START_CAPTURING':
       return {
         ...state,
-        barcodeConfidence: action.confidence,
+        isCapturing: true,
+        frameUrl: null
+      };
+    case 'FRAME_CAPTURED':
+      return {
+        ...state,
+        isCapturing: false,
+        frameUrl: action.frameUrl,
+        isProcessing: true
+      };
+    case 'BARCODE_DETECTION':
+      return {
+        ...state,
         detectionCount: state.detectionCount + 1,
-        lastScans: newScans
+        currentBarcode: action.barcode
       };
     case 'BARCODE_CONFIRMED':
-      console.log('BARCODE_CONFIRMED action for', action.barcode);
       return {
         ...state,
         isProcessing: true,
@@ -82,7 +99,7 @@ function scannerReducer(state: ScannerState, action: ScannerAction): ScannerStat
     case 'PRODUCT_SEARCH_SUCCESS':
       return { ...state, isSearching: false, isProcessing: false };
     case 'PRODUCT_SEARCH_FAILED':
-      return { ...state, isSearching: false, searchFailed: true };
+      return { ...state, isSearching: false, searchFailed: true, isProcessing: false };
     case 'RESET_SCANNER':
       return {
         ...state,
@@ -91,10 +108,17 @@ function scannerReducer(state: ScannerState, action: ScannerAction): ScannerStat
         searchFailed: false,
         currentBarcode: null,
         detectionCount: 0,
-        lastScans: []
+        lastScans: [],
+        isCapturing: false,
+        frameUrl: null
       };
-    case 'SET_ERROR':
-      return { ...state, error: action.error };
+    case 'PROCESSING_FAILED':
+      return { 
+        ...state, 
+        isProcessing: false, 
+        error: action.error,
+        isCapturing: false 
+      };
     default:
       return state;
   }
@@ -113,13 +137,26 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     error: null,
     barcodeConfidence: 0,
     detectionCount: 0,
-    lastScans: []
+    lastScans: [],
+    isCapturing: false,
+    frameUrl: null,
+    cameraReady: false
   });
   
+  const [scanSucceeded, setScanSucceeded] = useState(false);
+  
   const scannerRef = useRef<HTMLDivElement>(null);
-  const barcodeDetected = useRef(false); // Track if we've already detected a barcode
+  const processingRef = useRef(false); // Track if we're already processing
   const resizeTimeout = useRef<NodeJS.Timeout | null>(null); // For debouncing resize events
-  const lastScansRef = useRef<string[]>([]); // Ref to track scans outside of React state flow
+  const quaggaStreamRef = useRef<MediaStream | null>(null); // Track the active camera stream
+  const cameraReadyTimerRef = useRef<NodeJS.Timeout | null>(null); // Timer for camera ready state
+  
+  // Check if device is mobile
+  const isMobile = useCallback(() => {
+    return navigator.maxTouchPoints > 1 || 
+           /Mobi|Android/i.test(navigator.userAgent) ||
+           window.innerWidth < 768;
+  }, []);
   
   // Check camera permissions
   const checkCameraPermissions = useCallback(async () => {
@@ -139,11 +176,14 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       }
       
       // Try to access the camera
-      await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           facingMode: "environment"
         } 
       });
+      
+      // Stop the test stream immediately
+      stream.getTracks().forEach(track => track.stop());
       
       dispatch({ type: 'CAMERA_PERMISSION_GRANTED' });
       return true;
@@ -153,180 +193,129 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       return false;
     }
   }, []);
-  
-  // Check if barcode is valid with improved logging
-  const isValidBarcode = useCallback((barcode: string): boolean => {
-    console.log(`Validating barcode: ${barcode}`);
-    return validateBarcode(barcode);
-  }, []);
-  
-  // Check if we have consistent barcode readings
-  const hasBarcodeConsensus = useCallback((): string | null => {
-    const scans = [...state.lastScans]; // Create a copy of the current scans
-    
-    console.log('Checking barcode consensus with scans:', scans);
-    
-    if (scans.length < 3) {
-      console.log('Not enough scans for consensus yet');
-      return null; // Not enough scans yet
-    }
-    
-    // Count occurrences of each barcode
-    const counts: Record<string, number> = {};
-    let mostFrequent = '';
-    let maxCount = 0;
-    
-    for (const code of scans) {
-      counts[code] = (counts[code] || 0) + 1;
-      
-      if (counts[code] > maxCount) {
-        maxCount = counts[code];
-        mostFrequent = code;
-      }
-    }
-    
-    console.log('Barcode counts:', counts, 'Most frequent:', mostFrequent, 'Count:', maxCount);
-    
-    // If the most frequent barcode appears at least 3 times (or in 60% of scans)
-    const threshold = Math.max(3, Math.floor(scans.length * 0.6));
-    console.log(`Threshold for consensus: ${threshold}/${scans.length}`);
-    
-    if (maxCount >= threshold) {
-      // Check if the barcode is valid
-      const isValid = isValidBarcode(mostFrequent);
-      console.log(`Validation check for most frequent barcode ${mostFrequent}: ${isValid}`);
-      
-      if (isValid) {
-        console.log(`Barcode consensus reached for ${mostFrequent}`);
-        return mostFrequent;
-      } else {
-        console.log(`Barcode consensus reached but validation failed for ${mostFrequent}`);
-      }
-    }
-    
-    console.log('No consensus reached yet');
-    return null;
-  }, [state.lastScans, isValidBarcode]);
-  
-  // Initialize the barcode scanner with improved settings
-  const initializeScanner = useCallback(async () => {
-    if (!scannerRef.current) return;
-    
-    // Clear any existing state
-    barcodeDetected.current = false;
-    lastScansRef.current = []; // Reset scans ref
-    dispatch({ type: 'RESET_SCANNER' });
 
-    try {
-      // Check camera permissions first
-      const hasPermission = await checkCameraPermissions();
-      if (!hasPermission) {
+  // Convert a data URL to a File object
+  const dataUrlToFile = useCallback((dataUrl: string, filename: string): File => {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    
+    return new File([u8arr], filename, { type: mime });
+  }, []);
+
+  // Capture a frame from the video feed
+  const captureFrame = useCallback(async (): Promise<string | null> => {
+    return new Promise((resolve) => {
+      console.log('Attempting to capture frame from video feed');
+      dispatch({ type: 'START_CAPTURING' });
+      
+      if (!scannerRef.current) {
+        console.error('Scanner reference is null');
+        dispatch({ type: 'PROCESSING_FAILED', error: 'Scanner is not ready' });
+        processingRef.current = false;
+        resolve(null);
         return;
       }
+      
+      // Find the video element
+      const videoElements = scannerRef.current.getElementsByTagName('video');
+      if (!videoElements.length) {
+        console.error('No video element found');
+        dispatch({ type: 'PROCESSING_FAILED', error: 'Camera view is not available' });
+        processingRef.current = false;
+        resolve(null);
+        return;
+      }
+      
+      const video = videoElements[0];
+      
+      // Create a canvas to capture the frame
+      const canvas = document.createElement('canvas');
+      const aspectRatio = video.videoWidth / video.videoHeight;
+      
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      console.log(`Canvas dimensions: ${canvas.width}x${canvas.height}, video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+      
+      // Draw the current video frame to the canvas
+      const context = canvas.getContext('2d');
+      if (!context) {
+        console.error('Failed to get canvas context');
+        dispatch({ type: 'PROCESSING_FAILED', error: 'Could not prepare image' });
+        processingRef.current = false;
+        resolve(null);
+        return;
+      }
+      
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Convert the canvas to a data URL
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      
+      // If we got a data URL, resolve with it
+      if (dataUrl && dataUrl.length > 100) {
+        console.log('Successfully captured frame');
+        dispatch({ type: 'FRAME_CAPTURED', frameUrl: dataUrl });
+        resolve(dataUrl);
+      } else {
+        console.error('Failed to capture frame - invalid data URL');
+        dispatch({ type: 'PROCESSING_FAILED', error: 'Failed to capture image' });
+        processingRef.current = false;
+        resolve(null);
+      }
+    });
+  }, []);
 
-      console.log('Initializing Quagga barcode scanner...');
-      
-      // Initialize Quagga with enhanced settings
-      await Quagga.init({
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: scannerRef.current,
-          constraints: {
-            facingMode: "environment", // Use back camera on mobile devices
-            width: { ideal: window.innerWidth },
-            height: { ideal: window.innerHeight },
-            aspectRatio: { min: 1, max: 2 }
-          },
-          area: { // Define scanning area as a percentage of the viewport
-            top: "20%",    // Reduce the scanning area for more focused scans
-            right: "10%",  
-            left: "10%",   
-            bottom: "20%"
-          }
-        },
-        locator: {
-          patchSize: "medium",
-          halfSample: true
-        },
-        numOfWorkers: navigator.hardwareConcurrency ? Math.max(navigator.hardwareConcurrency - 1, 1) : 2,
-        frequency: 10, // Scan frequency in frames
-        decoder: {
-          readers: [
-            "ean_reader",
-            "ean_8_reader",
-            "upc_reader",
-            "upc_e_reader",
-            "code_128_reader"
-          ],
-          multiple: false,
-          debug: {
-            showCanvas: true, // Set to true temporarily for debugging
-            showPatches: false,
-            showFoundPatches: false,
-            showSkeleton: false,
-            showLabels: false,
-            showPatchLabels: false,
-            showRemainingPatchLabels: false
-          }
-        },
-        locate: true
-      });
-      
-      // Start the scanner
-      Quagga.start();
-      console.log('Quagga scanner started successfully');
-      dispatch({ type: 'CAMERA_INITIALIZED' });
-      
-      // Fix styling for video and canvas elements
-      const videoEls = scannerRef.current.getElementsByTagName('video');
-      const canvasEls = scannerRef.current.getElementsByTagName('canvas');
-      
-      // Apply styles to video elements
-      if (videoEls.length > 0) {
-        for (let i = 0; i < videoEls.length; i++) {
-          Object.assign(videoEls[i].style, {
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            position: 'absolute'
-          });
-        }
-      }
-      
-      // Apply styles to canvas elements
-      if (canvasEls.length > 0) {
-        for (let i = 0; i < canvasEls.length; i++) {
-          Object.assign(canvasEls[i].style, {
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            position: 'absolute'
-          });
-        }
-      }
-      
-      // Set up the barcode detection handler
-      Quagga.onProcessed(handleProcessed);
-      Quagga.onDetected(handleBarcodeDetection);
-      
-    } catch (err) {
-      console.error("Error initializing Quagga:", err);
-      dispatch({ 
-        type: 'CAMERA_INITIALIZATION_FAILED',
-        error: err instanceof Error ? err.message : 'Failed to initialize camera' 
-      });
+  // Handle the detection of barcode in video frames
+  const handleQuaggaProcessed = useCallback((result: any) => {
+    // Only proceed with detection if camera is ready and not already processing
+    if (!state.cameraReady || processingRef.current || scanSucceeded) {
+      return;
     }
-  }, [checkCameraPermissions]);
-  
+    
+    // Check if a barcode was located in this frame
+    if (result && result.boxes && result.boxes.length > 0) {
+      console.log('Quagga detected possible barcode regions in frame');
+      
+      // We found a potential barcode, capture the frame for processing
+      if (!processingRef.current) {
+        processingRef.current = true;
+        captureFrame().catch(error => {
+          console.error('Error capturing frame after barcode detection:', error);
+          processingRef.current = false;
+        });
+      }
+    }
+  }, [state.cameraReady, scanSucceeded, captureFrame]);
+
   // Function to properly clean up camera resources
   const stopScanner = useCallback(() => {
     if (Quagga) {
       console.log('Stopping Quagga and releasing camera resources...');
       
       try {
+        // Remove event handler first
+        Quagga.offProcessed(handleQuaggaProcessed);
+        
         // Stop Quagga processing
         Quagga.stop();
+        
+        // If we have stored the stream reference, stop all tracks
+        if (quaggaStreamRef.current) {
+          quaggaStreamRef.current.getTracks().forEach(track => {
+            console.log('Stopping track:', track.kind);
+            track.stop();
+          });
+          quaggaStreamRef.current = null;
+        }
         
         // Find all video elements added by Quagga and stop their tracks
         if (scannerRef.current) {
@@ -355,179 +344,283 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         console.error('Error while stopping camera:', err);
       }
     }
-  }, []);
-
-  // Handle processed frames - previously drew yellow and green boxes
-  const handleProcessed = useCallback((result: any) => {
-    // This is where the boxes were being drawn
-    // We've removed that code to eliminate the yellow and green boxes
     
-    // We're keeping this empty function to maintain the code structure
-    // and avoid breaking any dependencies or function calls
-  }, []);
+    // Also clear camera ready timer if it exists
+    if (cameraReadyTimerRef.current) {
+      clearTimeout(cameraReadyTimerRef.current);
+      cameraReadyTimerRef.current = null;
+    }
+    
+    // Reset camera ready state
+    dispatch({ type: 'RESET_SCANNER' });
+  }, [handleQuaggaProcessed]);
   
-  // Handle barcode detection with improved validation
-  const handleBarcodeDetection = useCallback(async (result) => {
-    // Debug logging for state
-    console.log('handleBarcodeDetection called with state:', {
-      isProcessing: state.isProcessing,
-      isSearching: state.isSearching,
-      barcodeDetectedRef: barcodeDetected.current,
-      scanActive: state.scanActive,
-      detectionCount: state.detectionCount,
-      lastScans: state.lastScans
-    });
-    
-    // Ignore if we're already processing
-    if (state.isProcessing || state.isSearching || barcodeDetected.current) {
-      console.log('Ignoring barcode detection, already processing or detected');
+  // Initialize the barcode scanner
+  const initializeScanner = useCallback(async () => {
+    if (!scannerRef.current) {
+      console.error('Scanner reference is null during initialization');
+      dispatch({ 
+        type: 'CAMERA_INITIALIZATION_FAILED',
+        error: 'Scanner element is not ready' 
+      });
       return;
     }
     
-    // Get the barcode value and confidence
-    const barcode = result.codeResult.code;
-    const scannerConfidence = result.codeResult.confidence || 50; // Use 50 as default if undefined
+    // Clean up first
+    stopScanner();
     
-    if (!barcode) {
-      console.log('No barcode in result, ignoring');
-      return;
-    }
-    
-    // Use the calculateBarcodeConfidence function with either the scanner confidence or a default value
-    const confidence = calculateBarcodeConfidence(barcode, scannerConfidence);
-    console.log(`Detected barcode: ${barcode} with scanner confidence: ${scannerConfidence}, enhanced confidence: ${confidence}`);
-    
-    // Store this detection in both state and ref
-    dispatch({ 
-      type: 'BARCODE_DETECTION', 
-      barcode,
-      confidence
-    });
-    
-    // Also add to our ref for immediate access
-    lastScansRef.current = [...lastScansRef.current, barcode].slice(-5);
-    console.log('Updated lastScansRef:', lastScansRef.current);
-    
-    // Check if we have reached consensus on a valid barcode using both state and ref
-    // First try using the ref for immediate access
-    let confirmedBarcode = null;
-    
-    // Check both the ref (for immediate updates) and state (for react lifecycle)
-    if (lastScansRef.current.length >= 3) {
-      const counts: Record<string, number> = {};
-      let mostFrequent = '';
-      let maxCount = 0;
-      
-      for (const code of lastScansRef.current) {
-        counts[code] = (counts[code] || 0) + 1;
-        if (counts[code] > maxCount) {
-          maxCount = counts[code];
-          mostFrequent = code;
-        }
+    // Clear any existing state
+    processingRef.current = false;
+    dispatch({ type: 'RESET_SCANNER' });
+    setScanSucceeded(false);
+
+    try {
+      // Check camera permissions first
+      const hasPermission = await checkCameraPermissions();
+      if (!hasPermission) {
+        return;
       }
+
+      console.log('Initializing Quagga scanner...');
       
-      const threshold = Math.max(3, Math.floor(lastScansRef.current.length * 0.6));
+      // Determine if running on mobile device
+      const isMobileDevice = isMobile();
+      console.log(`Detected device type: ${isMobileDevice ? 'Mobile' : 'Desktop'}`);
       
-      if (maxCount >= threshold && isValidBarcode(mostFrequent)) {
-        confirmedBarcode = mostFrequent;
-        console.log(`Consensus reached from ref with ${mostFrequent}`);
-      }
-    }
-    
-    // If no consensus from ref, try using the hasBarcodeConsensus function
-    if (!confirmedBarcode) {
-      confirmedBarcode = hasBarcodeConsensus();
-    }
-    
-    if (confirmedBarcode) {
-      console.log(`*** CONSENSUS REACHED for barcode: ${confirmedBarcode} ***`);
-      
-      // Set the detection flag to prevent duplicate processing
-      barcodeDetected.current = true;
-      
-      // Update state with confirmed barcode
-      dispatch({ type: 'BARCODE_CONFIRMED', barcode: confirmedBarcode });
-      
-      // Stop the scanner
-      stopScanner();
-      
-      // Start product search
-      dispatch({ type: 'PRODUCT_SEARCH_START' });
+      // Configure scanner based on device type
+      const scannerConfig = {
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: scannerRef.current,
+          constraints: {
+            width: isMobileDevice ? {min: 640, ideal: 1280, max: 1920} : window.innerWidth,
+            height: isMobileDevice ? {min: 480, ideal: 720, max: 1080} : window.innerHeight,
+            facingMode: "environment",
+            aspectRatio: isMobileDevice ? {min: 1, max: 2} : undefined
+          },
+          area: { // Define scanning area as a percentage
+            top: "20%",
+            right: "10%",
+            left: "10%",
+            bottom: "20%"
+          }
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: isMobileDevice // Better for mobile performance
+        },
+        numOfWorkers: navigator.hardwareConcurrency ? Math.max(Math.min(navigator.hardwareConcurrency - 1, 2), 1) : 2,
+        frequency: 10, // Frame processing frequency
+        decoder: {
+          // Only commenting these out to ensure view-only mode works correctly, uncomment for actual scanning
+          readers: []
+        },
+        locate: true // Enable barcode localization
+      };
       
       try {
-        console.log(`Looking up product for barcode: ${confirmedBarcode}`);
+        // Initialize Quagga with the configuration
+        await Quagga.init(scannerConfig);
         
-        // Look up the product name using the Open Food Facts API
-        const productName = await searchOpenFoodFacts(confirmedBarcode);
+        // Start the scanner
+        Quagga.start();
+        console.log('Quagga scanner started successfully');
+        dispatch({ type: 'CAMERA_INITIALIZED' });
         
-        console.log(`Product lookup result for ${confirmedBarcode}:`, productName ? productName : 'Not found');
+        // Store the active stream reference - safely check for CameraAccess and getActiveStream method
+        try {
+          // Check if CameraAccess exists and has getActiveStream method
+          if (Quagga.CameraAccess && typeof Quagga.CameraAccess.getActiveStream === 'function') {
+            const stream = Quagga.CameraAccess.getActiveStream();
+            if (stream) {
+              quaggaStreamRef.current = stream;
+              console.log('Camera stream stored in ref');
+            } else {
+              console.warn('No active stream found after Quagga.start()');
+            }
+          } else {
+            console.warn('Quagga.CameraAccess.getActiveStream is not available in this version');
+            // Find video elements directly and store their streams
+            if (scannerRef.current) {
+              const videoElements = scannerRef.current.getElementsByTagName('video');
+              if (videoElements.length > 0) {
+                quaggaStreamRef.current = videoElements[0].srcObject as MediaStream;
+                console.log('Camera stream stored from video element');
+              }
+            }
+          }
+        } catch (streamError) {
+          console.warn('Error accessing camera stream:', streamError);
+          // Continue without storing the stream reference
+        }
         
-        if (productName) {
-          // Product found
-          dispatch({ type: 'PRODUCT_SEARCH_SUCCESS' });
-          onBarcodeDetected(confirmedBarcode, productName);
-        } else {
-          console.log(`Product with barcode ${confirmedBarcode} not found`);
+        // Set up the processed handler for barcode detection
+        Quagga.onProcessed(handleQuaggaProcessed);
+        console.log('Attached onProcessed handler for barcode detection');
+        
+        // Fix styling for video and canvas elements
+        if (scannerRef.current) {
+          const videoEls = scannerRef.current.getElementsByTagName('video');
+          const canvasEls = scannerRef.current.getElementsByTagName('canvas');
+          
+          // Apply styles to video elements
+          if (videoEls.length > 0) {
+            for (let i = 0; i < videoEls.length; i++) {
+              Object.assign(videoEls[i].style, {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                position: 'absolute',
+                top: '0',
+                left: '0'
+              });
+            }
+          }
+          
+          // Apply styles to canvas elements
+          if (canvasEls.length > 0) {
+            for (let i = 0; i < canvasEls.length; i++) {
+              Object.assign(canvasEls[i].style, {
+                width: '100%',
+                height: '100%',
+                position: 'absolute',
+                top: '0',
+                left: '0'
+              });
+            }
+          }
+        }
+        
+        // Set a delay before enabling camera ready state
+        // This gives the camera time to properly initialize and display
+        cameraReadyTimerRef.current = setTimeout(() => {
+          dispatch({ type: 'CAMERA_READY' });
+          console.log('Camera ready for processing');
+        }, 1500);
+        
+      } catch (quaggaInitError) {
+        console.error("Error during Quagga initialization:", quaggaInitError);
+        dispatch({ 
+          type: 'CAMERA_INITIALIZATION_FAILED',
+          error: quaggaInitError instanceof Error ? quaggaInitError.message : 'Failed to initialize camera' 
+        });
+      }
+      
+    } catch (err) {
+      console.error("Error initializing scanner:", err);
+      dispatch({ 
+        type: 'CAMERA_INITIALIZATION_FAILED',
+        error: err instanceof Error ? err.message : 'Failed to initialize camera' 
+      });
+    }
+  }, [checkCameraPermissions, isMobile, handleQuaggaProcessed, stopScanner]);
+
+  // Process the captured frame for barcode detection
+  const processFrame = useCallback(async () => {
+    if (!state.frameUrl) {
+      processingRef.current = false;
+      return;
+    }
+    
+    try {
+      console.log('Processing captured frame with Gemini...');
+      
+      // Convert the data URL to a File object
+      const frameFile = dataUrlToFile(state.frameUrl, 'barcode-scan.jpg');
+      
+      // Use the Gemini API to extract the barcode
+      const barcode = await extractBarcodeFromImage(frameFile);
+      
+      if (barcode) {
+        console.log(`Barcode detected by Gemini: ${barcode}`);
+        dispatch({ type: 'BARCODE_DETECTION', barcode });
+        dispatch({ type: 'BARCODE_CONFIRMED', barcode });
+        
+        // Start product search
+        dispatch({ type: 'PRODUCT_SEARCH_START' });
+        
+        try {
+          // Look up the product name using the Open Food Facts API
+          const productName = await searchOpenFoodFacts(barcode);
+          
+          if (productName) {
+            console.log(`Product found: ${productName}`);
+            dispatch({ type: 'PRODUCT_SEARCH_SUCCESS' });
+            onBarcodeDetected(barcode, productName);
+            setScanSucceeded(true);
+          } else {
+            console.log(`Product with barcode ${barcode} not found`);
+            dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
+            
+            // Wait a moment to show the failure message, then reset
+            setTimeout(() => {
+              dispatch({ type: 'RESET_SCANNER' });
+              processingRef.current = false;
+            }, 2000);
+          }
+        } catch (error) {
+          console.error("Error processing barcode:", error);
           dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
           
-          // Wait a moment to show the failure message
+          // Wait a moment to show the failure message, then reset
           setTimeout(() => {
-            barcodeDetected.current = false;
-            lastScansRef.current = []; // Clear the ref
             dispatch({ type: 'RESET_SCANNER' });
-            
-            // Restart the scanner
-            initializeScanner();
+            processingRef.current = false;
           }, 2000);
         }
-      } catch (error) {
-        console.error("Error processing barcode:", error);
-        dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
+      } else {
+        console.log('No barcode detected by Gemini');
+        dispatch({ type: 'PROCESSING_FAILED', error: 'No barcode detected. Please try again.' });
         
-        // Wait a moment to show the failure message
+        // Reset the processing flag after a delay
         setTimeout(() => {
-          barcodeDetected.current = false;
-          lastScansRef.current = []; // Clear the ref
           dispatch({ type: 'RESET_SCANNER' });
-          
-          // Restart the scanner
-          initializeScanner();
-        }, 2000);
+          processingRef.current = false;
+        }, 1500);
       }
+    } catch (error) {
+      console.error('Error processing frame:', error);
+      dispatch({ type: 'PROCESSING_FAILED', error: 'Failed to process image. Please try again.' });
+      
+      // Reset the processing flag after a delay
+      setTimeout(() => {
+        dispatch({ type: 'RESET_SCANNER' });
+        processingRef.current = false;
+      }, 1500);
     }
-  }, [state.isProcessing, state.isSearching, state.scanActive, state.detectionCount, state.lastScans, hasBarcodeConsensus, onBarcodeDetected, initializeScanner, stopScanner, isValidBarcode]);
-  
-  // Highlight the detected barcode area
-  const highlightDetection = (box: any, color: string = '#00F') => {
-    if (!box) return;
-    
-    const overlay = document.querySelector<HTMLElement>('.drawingBuffer');
-    if (!overlay) return;
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = overlay.offsetWidth;
-    canvas.height = overlay.offsetHeight;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 5;
-    
-    // Draw the box
-    ctx.beginPath();
-    ctx.moveTo(box[0][0], box[0][1]);
-    for (let i = 1; i < box.length; i++) {
-      ctx.lineTo(box[i][0], box[i][1]);
+  }, [state.frameUrl, dataUrlToFile, onBarcodeDetected]);
+
+  // Handle the manual capture button click
+  const handleCaptureButtonClick = useCallback(async () => {
+    if (state.isProcessing || state.isSearching || scanSucceeded) {
+      return; // Prevent multiple captures while processing
     }
-    ctx.lineTo(box[0][0], box[0][1]);
-    ctx.stroke();
     
-    // Add a semi-transparent overlay to indicate processing
-    ctx.fillStyle = `${color.slice(0, 7)}33`; // Add 20% opacity
-    ctx.fill();
-  };
-  
+    processingRef.current = true;
+    
+    try {
+      // Capture frame from video feed
+      await captureFrame();
+    } catch (error) {
+      console.error('Error capturing frame:', error);
+      dispatch({ type: 'PROCESSING_FAILED', error: 'Failed to capture image' });
+      processingRef.current = false;
+    }
+  }, [state.isProcessing, state.isSearching, scanSucceeded, captureFrame]);
+
+  // Handle "Scan Next Item" button click
+  const handleScanNextItem = useCallback(() => {
+    setScanSucceeded(false);
+    processingRef.current = false;
+    dispatch({ type: 'RESET_SCANNER' });
+    
+    // Re-initialize the scanner
+    setTimeout(() => {
+      initializeScanner();
+    }, 300);
+  }, [initializeScanner]);
+
   // Debounced window resize handler
   const handleResize = useCallback(() => {
     // Cancel any pending resize
@@ -547,16 +640,14 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       }
     }, 500); // 500ms debounce time
   }, [state.scanActive, initializeScanner, stopScanner]);
-  
-  // Effect to handle closing the scanner and properly releasing resources
+
+  // Process the frame when it's captured
   useEffect(() => {
-    // Function to handle cleanup when component unmounts or close button is clicked
-    return () => {
-      // Make sure we stop Quagga and release the camera
-      stopScanner();
-    };
-  }, [stopScanner]);
-  
+    if (state.frameUrl && processingRef.current) {
+      processFrame();
+    }
+  }, [state.frameUrl, processFrame]);
+
   // Initialize scanner on mount
   useEffect(() => {
     console.log('Initializing barcode scanner...');
@@ -565,21 +656,41 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     // Set up resize handler with debouncing
     window.addEventListener('resize', handleResize);
     
+    // Set up orientation change handler
+    window.addEventListener('orientationchange', () => {
+      console.log('Orientation changed, reinitializing scanner...');
+      // Stop scanner
+      stopScanner();
+      
+      // Give time for UI to adjust
+      setTimeout(() => {
+        // Reinitialize scanner
+        initializeScanner();
+      }, 500);
+    });
+    
     // Cleanup function
     return () => {
       // Clean up the resize handler
       window.removeEventListener('resize', handleResize);
+      
+      // Clean up orientation change handler
+      window.removeEventListener('orientationchange', () => {});
       
       // Clean up any pending timeout
       if (resizeTimeout.current) {
         clearTimeout(resizeTimeout.current);
       }
       
+      if (cameraReadyTimerRef.current) {
+        clearTimeout(cameraReadyTimerRef.current);
+      }
+      
       // Make sure we stop Quagga and release the camera
       stopScanner();
     };
   }, [initializeScanner, handleResize, stopScanner]);
-
+  
   // Handle Escape key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -616,6 +727,28 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       );
     }
     
+    if (state.error && state.error !== 'No barcode detected. Please try again.' && !state.scanActive) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-white p-6 text-center">
+          <AlertCircle size={48} className="mb-4 text-yellow-500" />
+          <h3 className="text-xl font-medium mb-2">Camera Error</h3>
+          <p className="mb-6">{state.error}</p>
+          <button
+            onClick={() => initializeScanner()}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg mr-2"
+          >
+            Try Again
+          </button>
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-slate-600 text-white rounded-lg mt-2"
+          >
+            Close
+          </button>
+        </div>
+      );
+    }
+    
     return (
       <div className="relative h-full w-full overflow-hidden">
         {/* Scanner container */}
@@ -624,6 +757,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           className="absolute inset-0 bg-black overflow-hidden"
           style={{ width: '100%', height: '100%' }}
         >
+          {/* This is where Quagga will insert the video element */}
         </div>
         
         {/* Enhanced scanning guide overlay */}
@@ -635,53 +769,95 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
             <div className="absolute -bottom-2 -left-2 w-8 h-8 border-b-2 border-l-2 border-blue-400 rounded-bl-md"></div>
             <div className="absolute -bottom-2 -right-2 w-8 h-8 border-b-2 border-r-2 border-blue-400 rounded-br-md"></div>
             
-            {/* Scanning line animation */}
-            <div className="absolute left-0 right-0 h-0.5 bg-blue-500 opacity-80" 
-                style={{ 
-                  animation: 'scanLineMove 2s linear infinite',
-                  top: state.detectionCount > 0 ? '50%' : '10%'
-                }}>
-            </div>
+            {/* Scanning line animation - only show when not processing */}
+            {state.scanActive && !state.isProcessing && !state.isCapturing && !scanSucceeded && (
+              <div className="absolute left-0 right-0 h-0.5 bg-blue-500 opacity-80" 
+                   style={{ 
+                     animation: 'scanLineMove 2s linear infinite',
+                     top: '50%'
+                   }}>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Status message */}
         <div className="absolute top-8 left-0 right-0 flex justify-center">
           <div className={`px-4 py-2 rounded-full text-sm font-medium text-white ${
-            state.searchFailed 
-              ? 'bg-red-600/80' 
-              : state.isSearching 
-                ? 'bg-blue-600/80' 
-                : state.detectionCount > 2
-                  ? 'bg-green-600/80'
-                  : 'bg-black/60'
+            scanSucceeded 
+              ? 'bg-green-600/80'
+              : state.searchFailed 
+                ? 'bg-red-600/80' 
+                : state.isSearching 
+                  ? 'bg-blue-600/80' 
+                  : state.isCapturing
+                    ? 'bg-blue-600/80'
+                    : state.isProcessing
+                      ? 'bg-green-600/80'
+                      : 'bg-black/60'
           }`}>
+            {scanSucceeded && <CheckCircle size={16} className="inline-block mr-1" />}
             {state.searchFailed && <AlertCircle size={16} className="inline-block mr-1" />}
             {state.isSearching && <Loader size={16} className="inline-block mr-1 animate-spin" />}
+            {state.isCapturing && <Loader size={16} className="inline-block mr-1 animate-spin" />}
+            {state.isProcessing && !state.isSearching && !scanSucceeded && <Loader size={16} className="inline-block mr-1 animate-spin" />}
             <span>
-              {state.searchFailed 
-                ? 'Product not found, try again' 
-                : state.isSearching 
-                  ? `Looking up barcode ${state.currentBarcode}...` 
-                  : state.detectionCount > 2
-                    ? 'Barcode detected, confirming...'
-                    : 'Position barcode within the frame'}
+              {scanSucceeded
+                ? `Barcode ${state.currentBarcode} processed successfully!`
+                : state.searchFailed 
+                  ? 'Product not found, try again' 
+                  : state.isSearching 
+                    ? `Looking up barcode ${state.currentBarcode}...` 
+                    : state.isCapturing
+                      ? 'Capturing image...'
+                      : state.isProcessing
+                        ? 'Analyzing image for barcode...'
+                        : 'Position barcode within frame and tap "Capture"'}
             </span>
           </div>
         </div>
         
-        {/* Detection counter (visual indicator of progress) */}
-        {!state.isSearching && !state.searchFailed && state.detectionCount > 0 && (
+        {/* Error message if present */}
+        {state.error && !state.searchFailed && (
+          <div className="absolute top-20 left-0 right-0 flex justify-center">
+            <div className="px-4 py-2 rounded-full text-sm font-medium text-white bg-red-600/80">
+              <AlertCircle size={16} className="inline-block mr-1" />
+              <span>{state.error}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Capture button - only show when not processing and scan hasn't succeeded */}
+        {!state.isProcessing && !state.isSearching && !state.isCapturing && !scanSucceeded && (
           <div className="absolute bottom-24 left-0 right-0 flex justify-center">
-            <div className="flex space-x-1">
-              {[...Array(5)].map((_, i) => (
-                <div 
-                  key={i} 
-                  className={`w-2 h-2 rounded-full ${
-                    i < state.detectionCount ? 'bg-green-500' : 'bg-white/30'
-                  }`}
-                />
-              ))}
+            <button 
+              onClick={handleCaptureButtonClick}
+              className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 p-6 rounded-full shadow-lg flex items-center justify-center"
+              aria-label="Capture barcode"
+            >
+              <Camera size={30} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        
+        {/* "Scan Next" button - only show after successful scan */}
+        {scanSucceeded && (
+          <div className="absolute bottom-24 left-0 right-0 flex justify-center">
+            <button 
+              onClick={handleScanNextItem}
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center justify-center"
+            >
+              <Camera size={20} className="mr-2" />
+              Scan Next Item
+            </button>
+          </div>
+        )}
+        
+        {/* Hint text for better user guidance */}
+        {!state.isProcessing && !state.isSearching && !state.isCapturing && !scanSucceeded && (
+          <div className="absolute bottom-16 left-0 right-0 flex justify-center">
+            <div className="text-sm text-white bg-black/60 px-4 py-2 rounded-full">
+              Position barcode in box and tap capture
             </div>
           </div>
         )}
@@ -708,7 +884,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       </div>
 
       {/* Scan indicator at bottom */}
-      {state.hasCamera && state.hasCameraPermission !== 'denied' && !state.isSearching && !state.searchFailed && (
+      {state.hasCamera && state.hasCameraPermission !== 'denied' && !state.isSearching && !state.searchFailed && !scanSucceeded && (
         <div className="relative z-10 w-full p-4 flex justify-center">
           <div className="w-48 h-1 bg-white/30 rounded-full overflow-hidden">
             <div className="h-full bg-white w-16 rounded-full animate-[scanAnimation_2s_ease-in-out_infinite]"></div>

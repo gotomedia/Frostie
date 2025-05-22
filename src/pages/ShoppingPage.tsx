@@ -1,26 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { ShoppingCart, PlusCircle } from 'lucide-react';
 import ShoppingItemComponent from '../components/ShoppingItem';
 import EmptyState from '../components/EmptyState';
 import EditShoppingItemModal from '../components/EditShoppingItemModal';
+import LoadingTransition from '../components/LoadingTransition';
 import { ShoppingItem } from '../types';
 import { getCategories } from '../data/categories';
+import { useStorage } from '../store/StorageContext';
+import { v4 as uuidv4 } from 'uuid';
+import { toast } from 'react-hot-toast';
 
-interface ShoppingPageProps {
-  shoppingItems: ShoppingItem[];
-  onAddItem: (value: string) => void;
-  onToggleItem: (id: string) => void;
-  onRemoveItem: (id: string) => void;
-  onUpdateItem?: (item: ShoppingItem) => void;
-}
-
-const ShoppingPage: React.FC<ShoppingPageProps> = ({
-  shoppingItems,
-  onAddItem,
-  onToggleItem,
-  onRemoveItem,
-  onUpdateItem
-}) => {
+const ShoppingPage: React.FC = () => {
+  const { shoppingItems } = useStorage();
   const [newItem, setNewItem] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -29,41 +20,140 @@ const ShoppingPage: React.FC<ShoppingPageProps> = ({
   // Get predefined categories
   const predefinedCategories = getCategories();
   
-  // Get all unique categories from items
-  const usedCategories = [...new Set(shoppingItems.map(item => item.category))];
+  // Get all unique categories from items - memoize to prevent recalculation
+  const usedCategories = useMemo(() => 
+    [...new Set(shoppingItems.items.map(item => item.category))],
+    [shoppingItems.items]
+  );
   
-  // Combine and deduplicate categories
-  const categories = [...new Set([...predefinedCategories, ...usedCategories])];
+  // Combine and deduplicate categories - memoize result
+  const categories = useMemo(() => 
+    [...new Set([...predefinedCategories, ...usedCategories])],
+    [predefinedCategories, usedCategories]
+  );
   
-  const handleSubmit = (e: React.FormEvent) => {
+  // Handle form submission - wrapped in useCallback
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (newItem.trim()) {
-      onAddItem(newItem);
-      setNewItem('');
+      try {
+        const item: ShoppingItem = {
+          id: uuidv4(),
+          name: newItem.trim(),
+          completed: false,
+          category: guessCategory(newItem.trim()),
+        };
+        
+        await shoppingItems.addItem(item);
+        toast.success(`Added ${newItem} to shopping list`);
+        setNewItem('');
+      } catch (error) {
+        console.error('Error adding shopping item:', error);
+        toast.error('Failed to add item to shopping list');
+      }
     }
-  };
+  }, [newItem, shoppingItems]);
   
-  // Handle edit item
-  const handleEditItem = (item: ShoppingItem) => {
+  // Handle toggle item complete/incomplete - wrapped in useCallback
+  const handleToggleItem = useCallback(async (id: string) => {
+    const item = shoppingItems.items.find(item => item.id === id);
+    if (!item) return;
+    
+    try {
+      const updatedItem = { ...item, completed: !item.completed };
+      await shoppingItems.updateItem(updatedItem);
+    } catch (error) {
+      console.error('Error toggling shopping item:', error);
+      toast.error('Failed to update item');
+    }
+  }, [shoppingItems]);
+  
+  // Handle edit item - wrapped in useCallback
+  const handleEditItem = useCallback((item: ShoppingItem) => {
     setCurrentEditItem(item);
     setIsEditModalOpen(true);
-  };
+  }, []);
 
-  // Handle save edited item
-  const handleSaveEditedItem = (updatedItem: ShoppingItem) => {
-    if (onUpdateItem) {
-      onUpdateItem(updatedItem);
+  // Handle save edited item - wrapped in useCallback
+  const handleSaveEditedItem = useCallback(async (updatedItem: ShoppingItem) => {
+    try {
+      await shoppingItems.updateItem(updatedItem);
+      toast.success(`Updated ${updatedItem.name}`);
+    } catch (error) {
+      console.error('Error updating shopping item:', error);
+      toast.error('Failed to update shopping item');
+    } finally {
+      setIsEditModalOpen(false);
+      setCurrentEditItem(null);
     }
-    setIsEditModalOpen(false);
-    setCurrentEditItem(null);
-  };
+  }, [shoppingItems]);
   
-  const filteredItems = showCompleted 
-    ? shoppingItems 
-    : shoppingItems.filter(item => !item.completed);
+  // Handle remove item - wrapped in useCallback
+  const handleRemoveItem = useCallback(async (id: string) => {
+    const item = shoppingItems.items.find(item => item.id === id);
+    if (!item) return;
+    
+    try {
+      await shoppingItems.deleteItem(id);
+      toast.success(`Removed ${item.name} from shopping list`);
+    } catch (error) {
+      console.error('Error removing shopping item:', error);
+      toast.error('Failed to remove item');
+    }
+  }, [shoppingItems]);
   
-  const incompleteCount = shoppingItems.filter(item => !item.completed).length;
-  const completedCount = shoppingItems.filter(item => item.completed).length;
+  // Guess category based on item name - wrapped in useCallback
+  const guessCategory = useCallback((itemName: string): string => {
+    const lowerCaseName = itemName.toLowerCase();
+    if (lowerCaseName.includes('meat') || lowerCaseName.includes('chicken') || 
+        lowerCaseName.includes('beef') || lowerCaseName.includes('pork') || 
+        lowerCaseName.includes('turkey') || lowerCaseName.includes('lamb')) {
+      return 'Meat & Poultry';
+    } else if (lowerCaseName.includes('fish') || lowerCaseName.includes('shrimp') || 
+               lowerCaseName.includes('seafood') || lowerCaseName.includes('scallop')) {
+      return 'Seafood';
+    } else if (lowerCaseName.includes('vegetable') || lowerCaseName.includes('veg') || 
+               lowerCaseName.includes('fruit') || lowerCaseName.includes('berry')) {
+      return 'Fruits & Vegetables';
+    } else if (lowerCaseName.includes('leftover') || lowerCaseName.includes('meal prep')) {
+      return 'Prepared Meals';
+    } else if (lowerCaseName.includes('dinner') || lowerCaseName.includes('pizza') || 
+               lowerCaseName.includes('breakfast')) {
+      return 'Ready-to-Eat';
+    } else if (lowerCaseName.includes('bread') || lowerCaseName.includes('dough') || 
+               lowerCaseName.includes('pastry')) {
+      return 'Bakery & Bread';
+    } else if (lowerCaseName.includes('ice cream') || lowerCaseName.includes('butter') || 
+               lowerCaseName.includes('cheese') || lowerCaseName.includes('milk')) {
+      return 'Dairy & Alternatives';
+    } else if (lowerCaseName.includes('soup') || lowerCaseName.includes('broth') || 
+               lowerCaseName.includes('stock')) {
+      return 'Soups & Broths';
+    } else if (lowerCaseName.includes('herb') || lowerCaseName.includes('spice') || 
+               lowerCaseName.includes('season')) {
+      return 'Herbs & Seasonings';
+    }
+    return 'Other';
+  }, []);
+  
+  // Filter items based on the completed status filter - memoize to prevent recalculation
+  const filteredItems = useMemo(() => 
+    showCompleted 
+      ? shoppingItems.items 
+      : shoppingItems.items.filter(item => !item.completed),
+    [shoppingItems.items, showCompleted]
+  );
+  
+  // Calculate counts - memoize to prevent recalculation
+  const incompleteCount = useMemo(() => 
+    shoppingItems.items.filter(item => !item.completed).length,
+    [shoppingItems.items]
+  );
+  
+  const completedCount = useMemo(() => 
+    shoppingItems.items.filter(item => item.completed).length,
+    [shoppingItems.items]
+  );
 
   return (
     <div className="pb-16 md:pb-4"> {/* Padding to accommodate mobile nav */}
@@ -107,28 +197,30 @@ const ShoppingPage: React.FC<ShoppingPageProps> = ({
           </label>
         </div>
         
-        {filteredItems.length > 0 ? (
-          <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
-            {filteredItems.map(item => (
-              <ShoppingItemComponent
-                key={item.id}
-                item={item}
-                onToggle={onToggleItem}
-                onRemove={onRemoveItem}
-                onEdit={handleEditItem}
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="Your shopping list is empty"
-            description={showCompleted
-              ? "Add items using the input above"
-              : "You have no incomplete items, toggle 'Show completed' to see completed items"
-            }
-            icon={<ShoppingCart size={32} />}
-          />
-        )}
+        <LoadingTransition loading={shoppingItems.loading}>
+          {filteredItems.length > 0 ? (
+            <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+              {filteredItems.map(item => (
+                <ShoppingItemComponent
+                  key={item.id}
+                  item={item}
+                  onToggle={handleToggleItem}
+                  onRemove={handleRemoveItem}
+                  onEdit={handleEditItem}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="Your shopping list is empty"
+              description={showCompleted
+                ? "Add items using the input above"
+                : "You have no incomplete items, toggle 'Show completed' to see completed items"
+              }
+              icon={<ShoppingCart size={32} />}
+            />
+          )}
+        </LoadingTransition>
       </section>
       
       {currentEditItem && (

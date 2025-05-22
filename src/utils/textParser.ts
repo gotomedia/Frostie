@@ -1,10 +1,13 @@
-import { FreezerItem } from '../types';
+/**
+ * Parse text input using Gemini AI if available, with fallback to regex parsing
+ */
+import { parseItemTextWithAI } from '../api/services/images';
+import { foodkeeperData, findBestFoodMatch, getExpirationInfo, calculateExpirationDate as getFoodkeeperExpirationDate } from '../data/foodkeeperData';
+import { guessCategory } from '../data/categories';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../api/supabase';
-import { CATEGORIES, guessCategory as categoriesGuessCategory, CategoryType } from '../data/categories';
+import { UserSettings } from '../types';
 
-// Interface for parsed item details
-export interface ParsedItemDetails {
+interface ParsedItemDetails {
   name: string;
   quantity: number;
   category: string;
@@ -13,81 +16,73 @@ export interface ParsedItemDetails {
   tags: string[];
 }
 
-// Enable or disable debug logging
-const DEBUG = true;
-
-// Helper function for conditional logging
-const debugLog = (...args: any[]) => {
-  if (DEBUG) {
-    console.log(...args);
-  }
-};
-
-/**
- * Parse text input using Gemini AI if available, with fallback to regex parsing
- */
-export const parseItemText = async (input: string, defaultExpirationDays: number = 30): Promise<ParsedItemDetails> => {
+export const parseItemText = async (input: string, userSettings: UserSettings | null): Promise<ParsedItemDetails> => {
+  // Always use 30 days as the fallback expiration period
+  const defaultExpirationDays = 30;
+  
   debugLog('Starting advanced text parsing for input:', input);
-  debugLog('Using default expiration days:', defaultExpirationDays);
+  debugLog('Using fixed default expiration days:', defaultExpirationDays);
 
   try {
     // Try to use the Supabase Edge Function with Gemini AI
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    debugLog('Attempting to use AI parser via Edge Function');
+    const result = await parseItemTextWithAI(input);
     
-    if (supabaseUrl && supabaseAnonKey) {
-      debugLog('Attempting to use AI parser via Edge Function');
-      const response = await fetch(`${supabaseUrl}/functions/v1/parse-item-text-with-ai`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`
-        },
-        body: JSON.stringify({ 
-          inputText: input,
-          defaultExpirationDays // Pass the default expiration days to the AI parser
-        })
-      });
+    if (result && result.parsedDetails) {
+      debugLog('Received AI parsing response:', result);
       
-      if (response.ok) {
-        const data = await response.json();
-        debugLog('Received AI parsing response:', data);
+      // Convert the ISO date string back to a Date object
+      const expirationDate = new Date(result.parsedDetails.expirationDate);
+      debugLog('Parsed expiration date:', expirationDate);
+      
+      // Validate that the date is in the future
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (expirationDate < today) {
+        debugLog('WARNING: AI returned a date in the past:', expirationDate);
         
-        if (data.parsedDetails) {
-          // Convert the ISO date string back to a Date object
-          const expirationDate = new Date(data.parsedDetails.expirationDate);
-          debugLog('Parsed expiration date:', expirationDate);
-          
-          // Validate that the date is in the future
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          
-          if (expirationDate < today) {
-            debugLog('WARNING: AI returned a date in the past:', expirationDate);
-            // Set default to user's specified days from now
-            const defaultDate = new Date();
-            defaultDate.setDate(defaultDate.getDate() + defaultExpirationDays);
-            
-            const result = {
-              ...data.parsedDetails,
-              expirationDate: defaultDate
-            };
-            
-            debugLog(`Fixed with default date:`, result);
-            return result;
-          }
-          
-          const result = {
-            ...data.parsedDetails,
-            expirationDate
-          };
-          
-          debugLog(`Successfully parsed with ${data.source} parser:`, result);
-          return result;
-        }
-      } else {
-        debugLog('Error from AI parser:', await response.text());
+        // Look up the item in the FoodKeeper database for a better expiration date
+        console.log(`🔍 FoodKeeper lookup for ${result.parsedDetails.name} in category ${result.parsedDetails.category}`);
+        const foodkeeperExpDate = getFoodkeeperExpirationDate(
+          result.parsedDetails.name, 
+          result.parsedDetails.category, 
+          defaultExpirationDays
+        );
+        
+        console.log(`✅ FoodKeeper result: ${foodkeeperExpDate.toISOString().split('T')[0]} (${Math.round((foodkeeperExpDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days from now)`);
+        debugLog('Using FoodKeeper expiration date instead:', foodkeeperExpDate);
+        
+        const parsedDetails = {
+          ...result.parsedDetails,
+          expirationDate: foodkeeperExpDate
+        };
+        
+        debugLog(`Fixed with FoodKeeper date:`, parsedDetails);
+        return {
+          name: parsedDetails.name || '',
+          quantity: Number(parsedDetails.quantity) || 1,
+          category: parsedDetails.category || 'Other',
+          size: parsedDetails.size || '',
+          expirationDate: parsedDetails.expirationDate,
+          tags: parsedDetails.tags || []
+        };
       }
+      
+      const parsedDetails = {
+        ...result.parsedDetails,
+        expirationDate
+      };
+      
+      debugLog(`Successfully parsed with ${result.source} parser:`, parsedDetails);
+      return {
+        name: parsedDetails.name || '',
+        quantity: Number(parsedDetails.quantity) || 1,
+        category: parsedDetails.category || 'Other',
+        size: parsedDetails.size || '',
+        expirationDate: parsedDetails.expirationDate,
+        tags: parsedDetails.tags || []
+      };
     }
   } catch (error) {
     debugLog('Error using AI parser:', error);
@@ -116,11 +111,11 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // Default to user-specified days from today
-  let expirationDate = new Date(today);
-  expirationDate.setDate(today.getDate() + defaultExpirationDays);
+  // Initialize expirationDate as null to track if we found an explicit date
+  let expirationDate: Date | null = null;
+  let explicitExpirationFound = false;
   
-  debugLog('Default expiration date set to:', expirationDate.toISOString());
+  debugLog('Default expiration not set yet, will check FoodKeeper first');
   
   let tags: string[] = [];
 
@@ -185,9 +180,10 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
             // Make sure the date is in the future
             if (parsedDate > today) {
               expirationDate = parsedDate;
+              explicitExpirationFound = true;
               debugLog('Set exact expiration date to:', expirationDate.toISOString());
             } else {
-              debugLog('Parsed date is in the past, keeping default:', expirationDate.toISOString());
+              debugLog('Parsed date is in the past, will try FoodKeeper data next');
             }
           }
         } catch (e) {
@@ -206,9 +202,9 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
           'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
           'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
           'a': 1, 'an': 1, // Handle "a week" or "an hour"
-          'day': 1, 'days': null, // These are for the unit, not the quantity
-          'week': 1, 'weeks': null,
-          'month': 1, 'months': null
+          'day': 1, 'days': 0, // These are for the unit, not the quantity
+          'week': 1, 'weeks': 0,
+          'month': 1, 'months': 0
         };
         
         if (isNaN(Number(amount)) && wordToNumber[amount.toLowerCase()] !== undefined) {
@@ -239,6 +235,7 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
               break;
           }
           
+          explicitExpirationFound = true;
           debugLog('Set relative expiration date to:', expirationDate.toISOString());
         }
       }
@@ -298,8 +295,37 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
   }
 
   // Determine category based on item name
-  category = categoriesGuessCategory(name);
+  category = guessCategory(name);
   debugLog('Guessed category:', category);
+
+  // IMPORTANT: Always check FoodKeeper database first for expiration date
+  // regardless of whether we found an explicit date in the text
+  console.log(`🔍 FoodKeeper lookup: Looking for "${name}" in category "${category}"`);
+  const foodkeeperExpDate = getFoodkeeperExpirationDate(name, category, defaultExpirationDays);
+  
+  // Get what would be the default expiration date for comparison
+  const defaultExpDate = new Date(today);
+  defaultExpDate.setDate(today.getDate() + defaultExpirationDays);
+  
+  // Check if FoodKeeper actually returned a different date than our default
+  const foodkeeperDifferent = foodkeeperExpDate.getTime() !== defaultExpDate.getTime();
+  const daysFromNow = Math.round((foodkeeperExpDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // Decision logic for which expiration date to use:
+  if (explicitExpirationFound && expirationDate) {
+    // If the user explicitly specified an expiration, use that
+    console.log(`✅ Using user-specified expiration date: ${expirationDate.toISOString().split('T')[0]} (${Math.round((expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days from now)`);
+  } else if (foodkeeperDifferent) {
+    // If no explicit date but FoodKeeper has specific data, use that
+    console.log(`✅ SUCCESS: FoodKeeper provided specific data for "${name}": ${foodkeeperExpDate.toISOString().split('T')[0]} (${daysFromNow} days)`);
+    console.log(`✅ FoodKeeper match found for "${name}"`);
+    console.log(`Using FoodKeeper expiration date: ${foodkeeperExpDate.toISOString().split('T')[0]} instead of default: ${defaultExpDate.toISOString().split('T')[0]}`);
+    expirationDate = foodkeeperExpDate;
+  } else {
+    // Last resort: use the default expiration days
+    console.log(`❌ No specific FoodKeeper data found for "${name}", using default: ${defaultExpirationDays} days`);
+    expirationDate = defaultExpDate;
+  }
 
   // Capitalize the first letter of each word in the name
   if (name.length > 0) {
@@ -347,7 +373,7 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
     quantity,
     category,
     size,
-    expirationDate,
+    expirationDate: expirationDate!, // Will never be null at this point
     tags
   };
   
@@ -356,212 +382,67 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
 };
 
 /**
- * Create a FreezerItem from input text using AI parsing or fallback method
+ * Helper function to log debug messages for text parsing
  */
-export const createFreezerItemFromParsedText = async (text: string): Promise<FreezerItem> => {
-  debugLog('Creating freezer item from text:', text);
-  
-  // Get the user's default expiration days setting
-  let defaultExpirationDays = 30; // Default fallback value
-  
-  try {
-    // Try to get user settings
-    const { data: user } = await supabase.auth.getUser();
-    
-    if (user?.user) {
-      // User is logged in, get their settings
-      const { data: settings } = await supabase
-        .from('user_settings')
-        .select('expiration_days')
-        .eq('user_id', user.user.id)
-        .single();
-      
-      if (settings?.expiration_days) {
-        defaultExpirationDays = settings.expiration_days;
-        debugLog('Using user default expiration days:', defaultExpirationDays);
-      } else {
-        debugLog('No user expiration_days setting found, using default:', defaultExpirationDays);
-      }
-    } else {
-      // No user logged in, try to get from localStorage
-      const storedSettings = localStorage.getItem('userSettings');
-      if (storedSettings) {
-        const parsedSettings = JSON.parse(storedSettings);
-        if (parsedSettings.expirationDays) {
-          defaultExpirationDays = parsedSettings.expirationDays;
-          debugLog('Using localStorage expirationDays:', defaultExpirationDays);
-        }
-      }
-    }
-  } catch (error) {
-    debugLog('Error getting user settings, using default expiration days:', error);
-  }
-  
-  try {
-    // Wait for the async parsing to complete with the user's expiration days setting
-    const parsedDetails = await parseItemText(text, defaultExpirationDays);
-    
-    // Return a properly formed FreezerItem with the parsed details
-    return {
-      id: uuidv4(),
-      name: parsedDetails.name,
-      addedDate: new Date(),
-      expirationDate: parsedDetails.expirationDate,
-      category: parsedDetails.category,
-      quantity: parsedDetails.quantity,
-      size: parsedDetails.size,
-      tags: parsedDetails.tags,
-      notes: ''
-    };
-  } catch (error) {
-    debugLog('Error in async parsing, using fallback parser:', error);
-    
-    // Use the regex parser as a fallback with the user's expiration days setting
-    const fallbackParsed = regexParseItemText(text, defaultExpirationDays);
-    
-    // Return a FreezerItem with the fallback parsed details
-    return {
-      id: uuidv4(),
-      name: fallbackParsed.name,
-      addedDate: new Date(),
-      expirationDate: fallbackParsed.expirationDate,
-      category: fallbackParsed.category,
-      quantity: fallbackParsed.quantity,
-      size: fallbackParsed.size,
-      tags: fallbackParsed.tags,
-      notes: ''
-    };
-  }
+const debugLog = (...args: any[]) => {
+  // Uncomment this line to enable debug logging
+  console.log(...args);
 };
 
 /**
  * Suggest basic tags based on item name and category
  */
-export const suggestBasicTags = (name: string, category: string): string[] => {
+const suggestBasicTags = (name: string, category: string): string[] => {
   const tags: string[] = [];
   const lowerName = name.toLowerCase();
   
-  // Add category-based tag
-  switch(category) {
-    case 'Meat & Poultry':
-      tags.push('protein');
-      break;
-    case 'Seafood':
-      tags.push('protein');
-      tags.push('seafood');
-      break;
-    case 'Fruits & Vegetables':
-      if (lowerName.includes('fruit') || 
-          lowerName.includes('berry') || 
-          lowerName.includes('apple') || 
-          lowerName.includes('banana')) {
-        tags.push('fruit');
-      } else {
-        tags.push('veggie');
-      }
-      tags.push('healthy');
-      break;
-    case 'Prepared Meals':
-      tags.push('meal');
-      tags.push('ready');
-      break;
-    case 'Bakery & Bread':
-      tags.push('bakery');
-      break;
-    case 'Dairy & Alternatives':
-      if (lowerName.includes('ice cream')) {
-        tags.push('dessert');
-      } else {
-        tags.push('dairy');
-      }
-      break;
-    case 'Soups & Broths':
-      tags.push('soup');
-      break;
+  // Add category as a tag
+  if (category !== 'Other') {
+    tags.push(category.toLowerCase().replace(/[^a-z0-9]/g, ''));
   }
   
-  // Add common meal type tags
-  if (lowerName.includes('breakfast') || 
-      lowerName.includes('pancake') || 
-      lowerName.includes('waffle')) {
-    tags.push('breakfast');
+  // Add some common tags based on item name
+  if (lowerName.includes('chicken') || lowerName.includes('beef') || lowerName.includes('pork')) {
+    tags.push('protein');
   }
-  
-  if (lowerName.includes('lunch') || 
-      lowerName.includes('sandwich')) {
-    tags.push('lunch');
+  if (lowerName.includes('vegetable') || lowerName.includes('fruit')) {
+    tags.push('healthy');
   }
-  
-  if (lowerName.includes('dinner') || 
-      lowerName.includes('supper')) {
-    tags.push('dinner');
+  if (lowerName.includes('dinner') || lowerName.includes('meal')) {
+    tags.push('meal');
   }
-  
-  if (lowerName.includes('dessert') || 
-      lowerName.includes('cake') || 
-      lowerName.includes('ice cream') ||
-      lowerName.includes('cookie')) {
+  if (lowerName.includes('leftover')) {
+    tags.push('leftovers');
+  }
+  if (lowerName.includes('dessert') || lowerName.includes('ice cream')) {
     tags.push('dessert');
   }
   
-  // Add preparation tags
-  if (lowerName.includes('leftover') || 
-      lowerName.includes('homemade')) {
-    tags.push('homemade');
-  }
-  
-  // Add origin/cuisine tags
-  if (lowerName.includes('italian') || 
-      lowerName.includes('pasta') || 
-      lowerName.includes('pizza')) {
-    tags.push('italian');
-  }
-  
-  if (lowerName.includes('mexican') || 
-      lowerName.includes('taco') || 
-      lowerName.includes('burrito')) {
-    tags.push('mexican');
-  }
-  
-  if (lowerName.includes('chinese') || 
-      lowerName.includes('asian') || 
-      lowerName.includes('stir fry')) {
-    tags.push('asian');
-  }
-  
-  return tags.slice(0, 3); // Limit to 3 tags maximum
+  return tags;
 };
 
 /**
- * Function to suggest tags using AI via Supabase Edge Function
+ * Create a freezer item from parsed text
  */
-export const suggestTagsWithAI = async (itemName: string): Promise<string[]> => {
-  try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    
-    if (supabaseUrl && supabaseAnonKey) {
-      const response = await fetch(`${supabaseUrl}/functions/v1/suggest-tags`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`
-        },
-        body: JSON.stringify({ itemName })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.tags && Array.isArray(data.tags)) {
-          return data.tags;
-        }
-      }
-    }
-    
-    // Fallback to basic tag suggestion
-    return suggestBasicTags(itemName, categoriesGuessCategory(itemName));
-  } catch (error) {
-    console.error('Error suggesting tags with AI:', error);
-    return suggestBasicTags(itemName, categoriesGuessCategory(itemName));
-  }
+export const createFreezerItemFromParsedText = async (
+  text: string, 
+  imageUrl?: string, 
+  userSettings: UserSettings | null = null
+): Promise<any> => {
+  // Parse the text to extract item details
+  const parsedDetails = await parseItemText(text, userSettings);
+  
+  // Create a new freezer item with the parsed details
+  return {
+    id: uuidv4(), // Use UUID instead of timestamp to ensure it's compatible with Supabase
+    name: parsedDetails.name,
+    quantity: parsedDetails.quantity,
+    size: parsedDetails.size,
+    category: parsedDetails.category,
+    expirationDate: parsedDetails.expirationDate,
+    addedDate: new Date(),
+    notes: '',
+    tags: parsedDetails.tags,
+    imageUrl: imageUrl || '' // Use provided image URL or empty string
+  };
 };

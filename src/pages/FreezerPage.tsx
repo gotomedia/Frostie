@@ -1,31 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Filter, Search, RefrigeratorIcon } from 'lucide-react';
 import UniversalInputBar from '../components/UniversalInputBar';
 import FreezerItemCard from '../components/FreezerItemCard';
 import EmptyState from '../components/EmptyState';
 import EditFreezerItemModal from '../components/EditFreezerItemModal';
+import LoadingTransition from '../components/LoadingTransition';
 import { FreezerItem } from '../types';
 import { getCategories } from '../data/categories';
+import { useStorage } from '../store/StorageContext';
+import { v4 as uuidv4 } from 'uuid';
+import { parseItemText } from '../utils/textParser';
+import { recognizeImageContent, scanBarcode } from '../api/services/images';
+import { toast } from 'react-hot-toast';
 
-interface FreezerPageProps {
-  freezerItems: FreezerItem[];
-  onAddItem: (value: string) => void;
-  onImageUpload: (file: File) => Promise<void> | void;
-  onBarcodeScanned: (barcode: string) => void;
-  onVoiceInput: (transcript: string) => void;
-  onRemoveItem: (id: string) => void;
-  onUpdateItem?: (item: FreezerItem) => void;
-}
-
-const FreezerPage: React.FC<FreezerPageProps> = ({
-  freezerItems,
-  onAddItem,
-  onImageUpload,
-  onBarcodeScanned,
-  onVoiceInput,
-  onRemoveItem,
-  onUpdateItem
-}) => {
+const FreezerPage: React.FC = () => {
+  const { freezerItems } = useStorage();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'expiration' | 'category'>('expiration');
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
@@ -35,44 +24,188 @@ const FreezerPage: React.FC<FreezerPageProps> = ({
   // Get all predefined categories
   const predefinedCategories = getCategories();
 
-  // Get all unique categories from items
-  const usedCategories = [...new Set(freezerItems.map(item => item.category))];
+  // Get all unique categories from items - memoize to prevent recalculation
+  const usedCategories = useMemo(() => 
+    [...new Set(freezerItems.items.map(item => item.category))], 
+    [freezerItems.items]
+  );
   
-  // Combine and deduplicate categories
-  const categories = [...new Set([...predefinedCategories, ...usedCategories])];
+  // Combine and deduplicate categories - memoize result
+  const categories = useMemo(() => 
+    [...new Set([...predefinedCategories, ...usedCategories])], 
+    [predefinedCategories, usedCategories]
+  );
 
-  // Handle edit item
-  const handleEditItem = (item: FreezerItem) => {
+  // Handle edit item - wrapped in useCallback
+  const handleEditItem = useCallback((item: FreezerItem) => {
     setCurrentEditItem(item);
     setIsEditModalOpen(true);
-  };
+  }, []);
 
-  // Handle save edited item
-  const handleSaveEditedItem = (updatedItem: FreezerItem) => {
-    if (onUpdateItem) {
-      onUpdateItem(updatedItem);
+  // Handle save edited item - wrapped in useCallback
+  const handleSaveEditedItem = useCallback(async (updatedItem: FreezerItem) => {
+    try {
+      await freezerItems.updateItem(updatedItem);
+      toast.success(`Updated ${updatedItem.name}`);
+    } catch (error) {
+      console.error('Error updating item:', error);
+      toast.error('Failed to update item');
+    } finally {
+      setIsEditModalOpen(false);
+      setCurrentEditItem(null);
     }
-    setIsEditModalOpen(false);
-    setCurrentEditItem(null);
-  };
+  }, [freezerItems]);
 
-  // Filter and sort items
-  const filteredItems = freezerItems
-    .filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory = filterCategory ? item.category === filterCategory : true;
-      return matchesSearch && matchesCategory;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'name') {
-        return a.name.localeCompare(b.name);
-      } else if (sortBy === 'expiration') {
-        return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
-      } else if (sortBy === 'category') {
-        return a.category.localeCompare(b.category);
+  // Add a new freezer item from text input - wrapped in useCallback
+  const handleAddFreezerItem = useCallback(async (itemName: string) => {
+    try {
+      // Parse the text to extract item details
+      const parsedDetails = await parseItemText(itemName, null);
+      
+      // Create a new item with the parsed details
+      const newItem: FreezerItem = {
+        id: uuidv4(),
+        name: parsedDetails.name,
+        addedDate: new Date(),
+        expirationDate: parsedDetails.expirationDate,
+        category: parsedDetails.category || 'Other', // Ensure category has a fallback
+        quantity: parsedDetails.quantity || 1,     // Ensure quantity has a fallback
+        size: parsedDetails.size || '',              // Ensure size has a fallback
+        tags: parsedDetails.tags || [],              // Ensure tags has a fallback
+        notes: '',
+        source: 'text'
+      };
+      
+      // Check if freezerItems.addItem is defined before calling it
+      if (freezerItems && typeof freezerItems.addItem === 'function') {
+        await freezerItems.addItem(newItem);
+        toast.success(`Added ${newItem.name} to your freezer`);
+      } else {
+        console.error('Error: freezerItems.addItem is not a function');
+        toast.error('Failed to add item to freezer');
       }
-      return 0;
-    });
+    } catch (error) {
+      console.error('Error creating freezer item:', error);
+      toast.error('Failed to process item. Please try again.');
+    }
+  }, [freezerItems]);
+
+  // Process an uploaded image - wrapped in useCallback
+  const handleImageUpload = useCallback(async (file: File) => {
+    try {
+      // Use the API to recognize the image content
+      const recognizedText = await recognizeImageContent(file);
+      
+      // Create a temporary URL for the uploaded image
+      const imageUrl = URL.createObjectURL(file);
+      
+      // Parse the recognized text and create a new item
+      const parsedDetails = await parseItemText(recognizedText, null);
+      const newItem: FreezerItem = {
+        id: uuidv4(),
+        name: parsedDetails.name,
+        addedDate: new Date(),
+        expirationDate: parsedDetails.expirationDate,
+        category: parsedDetails.category || 'Other',
+        quantity: parsedDetails.quantity || 1,
+        size: parsedDetails.size || '',
+        tags: parsedDetails.tags || [],
+        notes: '',
+        imageUrl: imageUrl,
+        source: 'image'
+      };
+      
+      if (freezerItems && typeof freezerItems.addItem === 'function') {
+        await freezerItems.addItem(newItem);
+        toast.success(`Added ${newItem.name} from image`);
+      } else {
+        console.error('Error: freezerItems.addItem is not a function');
+        toast.error('Failed to add item from image');
+      }
+    } catch (error) {
+      console.error('Error processing image:', error);
+      toast.error('Failed to process image');
+    }
+  }, [freezerItems]);
+
+  // Process a scanned barcode - wrapped in useCallback
+  const handleBarcodeScanned = useCallback(async (barcode: string) => {
+    try {
+      // Process the barcode
+      const productName = await scanBarcode(barcode);
+      
+      // Parse the product name and create a new item
+      const parsedDetails = await parseItemText(productName, null);
+      const newItem: FreezerItem = {
+        id: uuidv4(),
+        name: parsedDetails.name,
+        addedDate: new Date(),
+        expirationDate: parsedDetails.expirationDate,
+        category: parsedDetails.category || 'Other',
+        quantity: parsedDetails.quantity || 1,
+        size: parsedDetails.size || '',
+        tags: parsedDetails.tags || [],
+        notes: '',
+        source: 'barcode'
+      };
+      
+      if (freezerItems && typeof freezerItems.addItem === 'function') {
+        await freezerItems.addItem(newItem);
+        toast.success(`Added ${newItem.name} from barcode`);
+      } else {
+        console.error('Error: freezerItems.addItem is not a function');
+        toast.error('Failed to add item from barcode');
+      }
+    } catch (error) {
+      console.error('Error processing barcode:', error);
+      toast.error('Failed to process barcode');
+    }
+  }, [freezerItems]);
+
+  // Handle voice input - wrapped in useCallback
+  const handleVoiceInput = useCallback(async (transcript: string) => {
+    toast.success('Processing voice input...');
+    await handleAddFreezerItem(transcript);
+  }, [handleAddFreezerItem]);
+
+  // Remove a freezer item - wrapped in useCallback
+  const handleRemoveFreezerItem = useCallback(async (id: string) => {
+    const itemToDelete = freezerItems.items.find(item => item.id === id);
+    if (!itemToDelete) return;
+    
+    try {
+      if (freezerItems && typeof freezerItems.deleteItem === 'function') {
+        await freezerItems.deleteItem(id);
+        toast.success(`Removed ${itemToDelete.name}`);
+      } else {
+        console.error('Error: freezerItems.deleteItem is not a function');
+        toast.error('Failed to remove item');
+      }
+    } catch (error) {
+      console.error('Error removing item:', error);
+      toast.error('Failed to remove item');
+    }
+  }, [freezerItems]);
+
+  // Filter and sort items - memoize to prevent recalculation on every render
+  const filteredItems = useMemo(() => {
+    return freezerItems.items
+      .filter(item => {
+        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesCategory = filterCategory ? item.category === filterCategory : true;
+        return matchesSearch && matchesCategory;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'name') {
+          return a.name.localeCompare(b.name);
+        } else if (sortBy === 'expiration') {
+          return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
+        } else if (sortBy === 'category') {
+          return a.category.localeCompare(b.category);
+        }
+        return 0;
+      });
+  }, [freezerItems.items, searchTerm, filterCategory, sortBy]);
 
   return (
     <div className="pb-16 md:pb-4"> {/* Padding to accommodate mobile nav */}
@@ -80,10 +213,10 @@ const FreezerPage: React.FC<FreezerPageProps> = ({
         <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-3">Freezer Inventory</h2>
         <div className="mb-6">
           <UniversalInputBar
-            onSubmit={onAddItem}
-            onImageUpload={onImageUpload}
-            onBarcodeScanned={onBarcodeScanned}
-            onVoiceInput={onVoiceInput}
+            onSubmit={handleAddFreezerItem}
+            onImageUpload={handleImageUpload}
+            onBarcodeScanned={handleBarcodeScanned}
+            onVoiceInput={handleVoiceInput}
             placeholder="Add item to freezer..."
           />
         </div>
@@ -130,28 +263,30 @@ const FreezerPage: React.FC<FreezerPageProps> = ({
           </div>
         </div>
 
-        {filteredItems.length > 0 ? (
-          <div className="space-y-3">
-            {filteredItems.map(item => (
-              <FreezerItemCard
-                key={item.id}
-                item={item}
-                onRemove={onRemoveItem}
-                onEdit={handleEditItem}
+        <LoadingTransition loading={freezerItems.loading}>
+          {filteredItems.length > 0 ? (
+            <div className="space-y-3">
+              {filteredItems.map(item => (
+                <FreezerItemCard
+                  key={item.id}
+                  item={item}
+                  onRemove={handleRemoveFreezerItem}
+                  onEdit={handleEditItem}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="px-0">
+              <EmptyState
+                title={searchTerm || filterCategory ? "No matching items" : "Your freezer is empty"}
+                description={searchTerm || filterCategory 
+                  ? "Try changing your search or filters" 
+                  : "Add items using the input bar above"}
+                icon={<RefrigeratorIcon size={32} />}
               />
-            ))}
-          </div>
-        ) : (
-          <div className="px-0">
-            <EmptyState
-              title={searchTerm || filterCategory ? "No matching items" : "Your freezer is empty"}
-              description={searchTerm || filterCategory 
-                ? "Try changing your search or filters" 
-                : "Add items using the input bar above"}
-              icon={<RefrigeratorIcon size={32} />}
-            />
-          </div>
-        )}
+            </div>
+          )}
+        </LoadingTransition>
       </section>
       
       {currentEditItem && (
@@ -161,6 +296,7 @@ const FreezerPage: React.FC<FreezerPageProps> = ({
           onClose={() => setIsEditModalOpen(false)}
           onSave={handleSaveEditedItem}
           categories={categories}
+          source={currentEditItem.source}
         />
       )}
     </div>

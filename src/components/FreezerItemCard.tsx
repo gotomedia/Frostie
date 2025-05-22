@@ -1,5 +1,5 @@
-import React from 'react';
-import { Calendar, Trash2, Edit2, Tag } from 'lucide-react';
+import React, { memo } from 'react';
+import { Calendar, Trash2, Edit2, Tag, Image } from 'lucide-react';
 import { FreezerItem } from '../types';
 
 interface FreezerItemCardProps {
@@ -32,7 +32,7 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
 
   return (
     <div 
-      className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-center hover:shadow-md transition-shadow duration-200"
+      className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-start hover:shadow-md transition-shadow duration-200"
       aria-label={`${item.name}, ${item.size ? item.size + ',' : ''} ${item.category}, ${expirationText}`}
     >
       <div className="flex-1">
@@ -77,6 +77,27 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
             ))}
           </div>
         )}
+        
+        {/* Display image thumbnail if available */}
+        {item.imageUrl && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="w-10 h-10 rounded overflow-hidden bg-slate-100 dark:bg-slate-700 flex-shrink-0">
+              <img 
+                src={item.imageUrl} 
+                alt="" 
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Hide broken images
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </div>
+            <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+              <Image size={12} />
+              Image attached
+            </span>
+          </div>
+        )}
       </div>
       
       <div className="flex items-center gap-3">
@@ -108,4 +129,5 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
   );
 };
 
-export default FreezerItemCard;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(FreezerItemCard);

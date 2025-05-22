@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
-import { UserSettings, fetchUserSettings, saveUserSettings } from '../api/supabase';
 import { useTheme } from './ThemeContext';
+import { useStorage } from '../store/StorageContext';
+import { UserSettings } from '../api/supabase';
 
 // Define the type for the settings state
 interface SettingsState {
@@ -14,8 +15,7 @@ type SettingsAction =
   | { type: 'SET_SETTINGS'; payload: UserSettings }
   | { type: 'SET_THEME'; payload: 'light' | 'dark' | 'system' }
   | { type: 'SET_NOTIFICATIONS'; payload: boolean }
-  | { type: 'SET_EXPIRATION_DAYS'; payload: number }
-  | { type: 'SET_DIETARY'; payload: { key: string; value: boolean } }
+  | { type: 'SET_NOTIFICATION_TIMING'; payload: number }
   | { type: 'LOADING' }
   | { type: 'ERROR'; payload: string }
   | { type: 'SAVE_SUCCESS' };
@@ -28,7 +28,7 @@ interface SettingsContextType {
   updateSettings: (settings: Partial<UserSettings>) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setNotifications: (enabled: boolean) => void;
-  setExpirationDays: (days: number) => void;
+  setNotificationTiming: (timing: number) => void;
   setDietary: (key: string, value: boolean) => void;
 }
 
@@ -36,7 +36,7 @@ interface SettingsContextType {
 const defaultSettings: UserSettings = {
   theme: 'system',
   notifications: true,
-  expirationDays: 30,
+  notificationTiming: 3, // Default to 3 days before
   dietary: {
     vegetarian: false,
     vegan: false,
@@ -73,23 +73,12 @@ function settingsReducer(state: SettingsState, action: SettingsAction): Settings
           notifications: action.payload
         }
       };
-    case 'SET_EXPIRATION_DAYS':
+    case 'SET_NOTIFICATION_TIMING':
       return {
         ...state,
         settings: {
           ...state.settings,
-          expirationDays: action.payload
-        }
-      };
-    case 'SET_DIETARY':
-      return {
-        ...state,
-        settings: {
-          ...state.settings,
-          dietary: {
-            ...state.settings.dietary,
-            [action.payload.key]: action.payload.value
-          }
+          notificationTiming: action.payload
         }
       };
     case 'LOADING':
@@ -118,6 +107,7 @@ function settingsReducer(state: SettingsState, action: SettingsAction): Settings
 // Create provider component
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { setTheme: setAppTheme } = useTheme();
+  const { settings: storageSettings } = useStorage();
   
   // Initialize state with default settings
   const [state, dispatch] = useReducer(settingsReducer, {
@@ -131,15 +121,21 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const loadSettings = async () => {
       try {
         dispatch({ type: 'LOADING' });
-        const settings = await fetchUserSettings();
         
-        if (settings) {
-          dispatch({ type: 'SET_SETTINGS', payload: settings });
+        if (storageSettings.loading) {
+          return; // Wait for settings to load
+        }
+        
+        if (storageSettings.settings) {
+          dispatch({ type: 'SET_SETTINGS', payload: storageSettings.settings });
           // Update the theme context to match
-          setAppTheme(settings.theme);
+          setAppTheme(storageSettings.settings.theme);
         } else {
           // If no settings found, use defaults
           dispatch({ type: 'SET_SETTINGS', payload: defaultSettings });
+          
+          // Save the defaults to storage
+          await storageSettings.saveSettings(defaultSettings);
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -151,25 +147,27 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     
     loadSettings();
-  }, [setAppTheme]);
+  }, [storageSettings, setAppTheme, storageSettings.loading]);
   
   // Save settings when they change
-  // Using a debounce approach to avoid saving too frequently
   useEffect(() => {
-    const saveTimer = setTimeout(() => {
-      saveUserSettings(state.settings)
-        .then(() => dispatch({ type: 'SAVE_SUCCESS' }))
-        .catch(error => {
-          console.error('Error saving settings:', error);
-          dispatch({ 
-            type: 'ERROR', 
-            payload: error instanceof Error ? error.message : 'Failed to save settings'
-          });
+    const saveSettings = async () => {
+      try {
+        if (!state.isLoading && storageSettings.settings !== state.settings) {
+          await storageSettings.saveSettings(state.settings);
+          dispatch({ type: 'SAVE_SUCCESS' });
+        }
+      } catch (error) {
+        console.error('Error saving settings:', error);
+        dispatch({ 
+          type: 'ERROR', 
+          payload: error instanceof Error ? error.message : 'Failed to save settings'
         });
-    }, 500); // 500ms debounce
+      }
+    };
     
-    return () => clearTimeout(saveTimer);
-  }, [state.settings]);
+    saveSettings();
+  }, [state.settings, state.isLoading, storageSettings]);
   
   // Update app theme when theme setting changes
   useEffect(() => {
@@ -192,12 +190,21 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     dispatch({ type: 'SET_NOTIFICATIONS', payload: enabled });
   };
   
-  const setExpirationDays = (days: number) => {
-    dispatch({ type: 'SET_EXPIRATION_DAYS', payload: days });
+  const setNotificationTiming = (timing: number) => {
+    dispatch({ type: 'SET_NOTIFICATION_TIMING', payload: timing });
   };
   
   const setDietary = (key: string, value: boolean) => {
-    dispatch({ type: 'SET_DIETARY', payload: { key, value } });
+    dispatch({
+      type: 'SET_SETTINGS',
+      payload: {
+        ...state.settings,
+        dietary: {
+          ...state.settings.dietary,
+          [key]: value
+        }
+      }
+    });
   };
   
   // Provide context
@@ -210,7 +217,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateSettings,
         setTheme,
         setNotifications,
-        setExpirationDays,
+        setNotificationTiming,
         setDietary
       }}
     >

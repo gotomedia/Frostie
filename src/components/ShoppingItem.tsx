@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Trash2, Edit2 } from 'lucide-react';
 import { ShoppingItem as ShoppingItemType } from '../types';
 
@@ -58,4 +58,5 @@ const ShoppingItem: React.FC<ShoppingItemProps> = ({
   );
 };
 
-export default ShoppingItem;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(ShoppingItem);

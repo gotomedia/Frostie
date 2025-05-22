@@ -1,111 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Moon, Sun, Laptop, LogIn, LogOut, User, Loader, Mail, Info } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
 import { AuthContext } from '../contexts/AuthContext';
-import { UserSettings, fetchUserSettings, saveUserSettings } from '../api/supabase';
-import * as SliderPrimitive from "@radix-ui/react-slider";
+import { useSettings } from '../contexts/SettingsContext';
 
 const SettingsPage: React.FC = () => {
-  const { theme, setTheme } = useTheme();
-  const { user, signIn, signUp, signInWithGoogle, signOut, isLoading, error: authContextError } = React.useContext(AuthContext);
+  const { settings, isLoading: settingsLoading, setTheme, setNotifications, setNotificationTiming, setDietary } = useSettings();
+  const { user, signIn, signUp, signInWithGoogle, signOut, isLoading: authLoading, error: authContextError } = React.useContext(AuthContext);
   
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
   
-  // Settings states
-  const [notifications, setNotifications] = useState(true);
-  const [expirationDays, setExpirationDays] = useState(30);
-  const [dietary, setDietary] = useState({
-    vegetarian: false,
-    vegan: false,
-    glutenFree: false,
-    dairyFree: false
-  });
-  const [settingsLoading, setSettingsLoading] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  
-  // Load user settings if available
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        setSettingsLoading(true);
-        const settings = await fetchUserSettings();
-        
-        if (settings) {
-          setNotifications(settings.notifications);
-          setExpirationDays(settings.expirationDays);
-          setDietary(settings.dietary);
-        }
-      } catch (error) {
-        console.error('Error loading user settings:', error);
-        setSettingsError('Failed to load settings. Please try again.');
-      } finally {
-        setSettingsLoading(false);
-      }
-    };
-    
-    loadSettings();
-  }, [user]); // Reload settings when user changes
-
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
     setTheme(newTheme);
-    
-    // Also save to user settings
-    saveUserSettings({
-      theme: newTheme,
-      notifications,
-      expirationDays,
-      dietary
-    });
   };
   
-  const handleDietaryChange = (preference: keyof typeof dietary) => {
-    const newDietary = {
-      ...dietary,
-      [preference]: !dietary[preference]
-    };
-    
-    setDietary(newDietary);
-    
-    // Save the updated settings
-    saveUserSettings({
-      theme,
-      notifications,
-      expirationDays,
-      dietary: newDietary
-    });
+  const handleDietaryChange = (preference: keyof typeof settings.dietary) => {
+    setDietary(preference, !settings.dietary[preference]);
   };
   
   const handleNotificationsChange = (enabled: boolean) => {
     setNotifications(enabled);
-    
-    // Save the updated settings
-    saveUserSettings({
-      theme,
-      notifications: enabled,
-      expirationDays,
-      dietary
-    });
   };
   
-  const handleExpirationDaysChange = (value: number[]) => {
-    const days = value[0];
-    setExpirationDays(days);
-    
-    // Save the updated settings
-    saveUserSettings({
-      theme,
-      notifications,
-      expirationDays: days,
-      dietary
-    });
+  const handleNotificationTimingChange = (timing: number) => {
+    setNotificationTiming(timing);
   };
-
+  
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -117,7 +42,7 @@ const SettingsPage: React.FC = () => {
     }
     
     try {
-      setAuthLoading(true);
+      setIsSubmitting(true);
       
       if (isSignUp) {
         console.log('Attempting to sign up with email:', email);
@@ -135,38 +60,46 @@ const SettingsPage: React.FC = () => {
       console.error('Authentication error:', error);
       setAuthError((error as Error).message);
     } finally {
-      setAuthLoading(false);
+      setIsSubmitting(false);
     }
   };
   
   const handleGoogleSignIn = async () => {
     try {
-      setAuthLoading(true);
+      setIsSubmitting(true);
       setAuthError(null);
       await signInWithGoogle();
     } catch (error) {
       console.error('Google sign-in error:', error);
       setAuthError((error as Error).message);
     } finally {
-      setAuthLoading(false);
+      setIsSubmitting(false);
     }
   };
   
   const handleSignOut = async () => {
     try {
-      setAuthLoading(true);
+      setIsSubmitting(true);
       await signOut();
     } catch (error) {
       console.error('Sign-out error:', error);
       setAuthError((error as Error).message);
     } finally {
-      setAuthLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  // Calculate positions for key marker positions
-  const dayMarkers = [7, 30, 60, 90];
-  const getMarkerPosition = (days: number) => ((days - 7) / (90 - 7)) * 100;
+  // Loading state
+  if (settingsLoading || authLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-180px)]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-300">Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-16 md:pb-4"> {/* Padding to accommodate mobile nav */}
@@ -176,12 +109,7 @@ const SettingsPage: React.FC = () => {
         <section className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-medium text-slate-800 dark:text-slate-100 mb-4">Account</h3>
           
-          {isLoading || authLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader className="animate-spin mr-2" size={20} />
-              <span>Loading...</span>
-            </div>
-          ) : user ? (
+          {user ? (
             <div>
               <div className="flex items-center mb-4">
                 <User className="mr-2 text-blue-500" size={24} />
@@ -323,10 +251,10 @@ const SettingsPage: React.FC = () => {
                 
                 <button
                   type="submit"
-                  disabled={authLoading}
+                  disabled={isSubmitting}
                   className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {authLoading ? (
+                  {isSubmitting ? (
                     <>
                       <Loader size={18} className="animate-spin mr-2" />
                       {isSignUp ? "Signing Up..." : "Signing In..."}
@@ -349,11 +277,11 @@ const SettingsPage: React.FC = () => {
             <button
               onClick={() => handleThemeChange('light')}
               className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                theme === 'light' 
+                settings.theme === 'light' 
                   ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' 
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600/80'
               }`}
-              aria-pressed={theme === 'light'}
+              aria-pressed={settings.theme === 'light'}
             >
               <Sun className="h-5 w-5" aria-hidden="true" />
               <span>Light</span>
@@ -361,11 +289,11 @@ const SettingsPage: React.FC = () => {
             <button
               onClick={() => handleThemeChange('dark')}
               className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                theme === 'dark' 
+                settings.theme === 'dark' 
                   ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' 
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600/80'
               }`}
-              aria-pressed={theme === 'dark'}
+              aria-pressed={settings.theme === 'dark'}
             >
               <Moon className="h-5 w-5" aria-hidden="true" />
               <span>Dark</span>
@@ -373,11 +301,11 @@ const SettingsPage: React.FC = () => {
             <button
               onClick={() => handleThemeChange('system')}
               className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
-                theme === 'system' 
+                settings.theme === 'system' 
                   ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm' 
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600/80'
               }`}
-              aria-pressed={theme === 'system'}
+              aria-pressed={settings.theme === 'system'}
             >
               <Laptop className="h-5 w-5" aria-hidden="true" />
               <span>System</span>
@@ -387,61 +315,45 @@ const SettingsPage: React.FC = () => {
         
         <section className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
           <h3 className="text-lg font-medium text-slate-800 dark:text-slate-100 mb-4">Notifications</h3>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-700 dark:text-slate-300">Expiration Alerts</span>
+          
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-slate-700 dark:text-slate-300">Notify of Expiring Items</span>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={notifications}
-                onChange={() => handleNotificationsChange(!notifications)}
+                checked={settings.notifications}
+                onChange={() => handleNotificationsChange(!settings.notifications)}
                 className="sr-only peer"
+                aria-label="Enable notifications for expiring items"
               />
               <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
           </div>
           
-          <div className="mt-6">
-            <label id="expiration-days-label" className="block text-slate-700 dark:text-slate-300 mb-2">
-              Default Expiration Days
+          <div className="mt-2">
+            <label htmlFor="notification-timing" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Notification Timing
             </label>
-            
-            <div className="relative w-full flex flex-col items-center mt-8">
-              <SliderPrimitive.Root
-                defaultValue={[expirationDays]}
-                min={7}
-                max={90}
-                step={1}
-                onValueChange={handleExpirationDaysChange}
-                className="relative flex w-full touch-none select-none items-center"
-              >
-                <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                  <SliderPrimitive.Range className="absolute h-full bg-blue-600 dark:bg-blue-600" />
-                </SliderPrimitive.Track>
-
-                <SliderPrimitive.Thumb className="block h-4 w-4 rounded-full border border-blue-500 bg-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-blue-400 dark:bg-slate-800">
-                  {/* Sticky label */}
-                  <span className="absolute left-1/2 -translate-x-1/2 -translate-y-full -top-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-500 text-white whitespace-nowrap">
-                    {expirationDays} days
-                  </span>
-                </SliderPrimitive.Thumb>
-              </SliderPrimitive.Root>
-
-              <div className="relative w-full mt-6 h-6">
-                {dayMarkers.map((days) => (
-                  <span
-                    key={days}
-                    className="absolute text-xs text-slate-500 dark:text-slate-400"
-                    style={{
-                      left: `calc(${getMarkerPosition(days)}% - 12px)`,
-                      width: '24px',
-                      textAlign: 'center'
-                    }}
-                  >
-                    {days}
-                  </span>
-                ))}
-              </div>
-            </div>
+            <select
+              id="notification-timing"
+              value={settings.notificationTiming}
+              onChange={(e) => handleNotificationTimingChange(Number(e.target.value))}
+              className={`w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100 ${
+                !settings.notifications ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              disabled={!settings.notifications}
+              aria-label="Select when to receive notifications before items expire"
+            >
+              <option value={3}>Default (3 days before)</option>
+              <option value={7}>7 days before</option>
+              <option value={14}>14 days before</option>
+              <option value={30}>30 days before</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {settings.notifications 
+                ? "You'll be notified when items are about to expire." 
+                : "Enable notifications to get alerts about expiring items."}
+            </p>
           </div>
         </section>
         
@@ -455,7 +367,7 @@ const SettingsPage: React.FC = () => {
             <label className="flex items-center space-x-3">
               <input
                 type="checkbox"
-                checked={dietary.vegetarian}
+                checked={settings.dietary.vegetarian}
                 onChange={() => handleDietaryChange('vegetarian')}
                 className="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:bg-slate-700"
               />
@@ -465,7 +377,7 @@ const SettingsPage: React.FC = () => {
             <label className="flex items-center space-x-3">
               <input
                 type="checkbox"
-                checked={dietary.vegan}
+                checked={settings.dietary.vegan}
                 onChange={() => handleDietaryChange('vegan')}
                 className="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:bg-slate-700"
               />
@@ -475,7 +387,7 @@ const SettingsPage: React.FC = () => {
             <label className="flex items-center space-x-3">
               <input
                 type="checkbox"
-                checked={dietary.glutenFree}
+                checked={settings.dietary.glutenFree}
                 onChange={() => handleDietaryChange('glutenFree')}
                 className="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:bg-slate-700"
               />
@@ -485,7 +397,7 @@ const SettingsPage: React.FC = () => {
             <label className="flex items-center space-x-3">
               <input
                 type="checkbox"
-                checked={dietary.dairyFree}
+                checked={settings.dietary.dairyFree}
                 onChange={() => handleDietaryChange('dairyFree')}
                 className="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:focus:ring-blue-600 dark:bg-slate-700"
               />

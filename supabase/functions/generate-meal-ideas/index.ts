@@ -39,6 +39,8 @@ serve(async (req) => {
       dairyFree: false
     };
     
+    console.log("Received dietary preferences:", preferences);
+    
     if (!freezerItems || !Array.isArray(freezerItems) || freezerItems.length === 0) {
       return new Response(
         JSON.stringify({ error: "No freezer items provided" }),
@@ -76,7 +78,7 @@ serve(async (req) => {
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-    // Create the prompt for Gemini
+    // Create the prompt for Gemini with stronger emphasis on dietary preferences
     const prompt = `
       Generate 3 meal ideas based on these ingredients from my freezer: ${freezerItems.join(", ")}.
       
@@ -86,12 +88,15 @@ serve(async (req) => {
       - Gluten-Free: ${preferences.glutenFree}
       - Dairy-Free: ${preferences.dairyFree}
       
+      CRITICAL REQUIREMENT: Every meal MUST strictly follow the dietary preferences above. If a preference is true, all generated meals MUST adhere to that requirement without exception.
+      
       For each meal, provide:
       1. A clear title
       2. A short description (1-2 sentences)
       3. A list of ingredients
       4. Which of my freezer items it uses
-      5. Whether it is vegetarian, vegan, gluten-free, and dairy-free (true/false)
+      5. An estimated cooking time (e.g., "30 minutes", "1 hour")
+      6. Whether it is vegetarian, vegan, gluten-free, and dairy-free (true/false)
       
       Format the response as a JSON array with this structure:
       [
@@ -101,6 +106,7 @@ serve(async (req) => {
           "description": "Description of the meal",
           "ingredients": ["Ingredient 1", "Ingredient 2"],
           "matchedItems": ["freezer item 1", "freezer item 2"],
+          "cookingTime": "30 minutes",
           "vegetarian": true,
           "vegan": false,
           "glutenFree": true,
@@ -119,14 +125,41 @@ serve(async (req) => {
       const jsonStartIndex = text.indexOf('[');
       const jsonEndIndex = text.lastIndexOf(']') + 1;
       const jsonText = text.substring(jsonStartIndex, jsonEndIndex);
-      const mealIdeas = JSON.parse(jsonText);
+      const parsedMealIdeas = JSON.parse(jsonText);
+      
+      // Validate and filter the meal ideas based on dietary preferences
+      const filteredMealIdeas = parsedMealIdeas.filter((idea: any) => {
+        // Validate that the meal adheres to all selected dietary preferences
+        if (preferences.vegetarian && !idea.vegetarian) return false;
+        if (preferences.vegan && !idea.vegan) return false;
+        if (preferences.glutenFree && !idea.glutenFree) return false;
+        if (preferences.dairyFree && !idea.dairyFree) return false;
+        return true;
+      });
+      
+      console.log(`Filtered meal ideas: ${filteredMealIdeas.length} out of ${parsedMealIdeas.length} meet dietary preferences`);
+      
+      // If no ideas match the preferences, generate more ideas or use fallback
+      if (filteredMealIdeas.length === 0) {
+        console.log("No meal ideas match dietary preferences, using mock data");
+        const mockIdeas = await getMockMealIdeas(freezerItems, preferences, pexelsApiKey, unsplashApiKey);
+        return new Response(
+          JSON.stringify(mockIdeas),
+          { 
+            headers: { 
+              "Content-Type": "application/json",
+              ...corsHeaders
+            }
+          }
+        );
+      }
       
       // Add generated IDs
       const idPrefix = Date.now().toString();
       
       // Process each meal idea to find an image
       const mealIdeasWithImages = await Promise.all(
-        mealIdeas.map(async (idea: any, index: number) => {
+        filteredMealIdeas.map(async (idea: any, index: number) => {
           idea.id = `${idPrefix}-${index}`;
           
           // Find an image for the meal
@@ -377,7 +410,7 @@ async function searchUnsplash(query: string, apiKey: string): Promise<ImageSearc
   }
 }
 
-// Function to generate mock meal ideas with image search
+// Function to generate mock meal ideas with image search and proper dietary preference filtering
 async function getMockMealIdeas(
   freezerItems: string[], 
   preferences: any = {}, 
@@ -400,7 +433,8 @@ async function getMockMealIdeas(
       vegetarian: false,
       vegan: false,
       glutenFree: true,
-      dairyFree: true
+      dairyFree: true,
+      cookingTime: '30 minutes'
     },
     {
       id: `${timestamp}-2`,
@@ -414,7 +448,8 @@ async function getMockMealIdeas(
       vegetarian: true,
       vegan: false,
       glutenFree: false,
-      dairyFree: false
+      dairyFree: false,
+      cookingTime: '45 minutes'
     },
     {
       id: `${timestamp}-3`,
@@ -428,7 +463,8 @@ async function getMockMealIdeas(
       vegetarian: true,
       vegan: false,
       glutenFree: true,
-      dairyFree: false
+      dairyFree: false,
+      cookingTime: '10 minutes'
     },
     {
       id: `${timestamp}-4`,
@@ -442,7 +478,8 @@ async function getMockMealIdeas(
       vegetarian: true,
       vegan: true,
       glutenFree: true,
-      dairyFree: true
+      dairyFree: true,
+      cookingTime: '40 minutes'
     },
     {
       id: `${timestamp}-5`,
@@ -456,36 +493,139 @@ async function getMockMealIdeas(
       vegetarian: false,
       vegan: false,
       glutenFree: true,
-      dairyFree: true
+      dairyFree: true,
+      cookingTime: '25 minutes'
+    },
+    {
+      id: `${timestamp}-6`,
+      title: "Vegan Vegetable Soup",
+      description: "A comforting vegan vegetable soup with whatever frozen vegetables you have.",
+      ingredients: ["Frozen Mixed Vegetables", "Vegetable Broth", "Onion", "Garlic", "Herbs"],
+      matchedItems: freezerItems.filter(item => 
+        item.toLowerCase().includes("vegetable") || 
+        item.toLowerCase().includes("broth")
+      ),
+      vegetarian: true,
+      vegan: true,
+      glutenFree: true,
+      dairyFree: true,
+      cookingTime: '35 minutes'
+    },
+    {
+      id: `${timestamp}-7`,
+      title: "Gluten-Free Chicken Casserole",
+      description: "A hearty gluten-free casserole with chicken and vegetables.",
+      ingredients: ["Chicken", "Mixed Vegetables", "Gluten-Free Flour", "Almond Milk", "Herbs"],
+      matchedItems: freezerItems.filter(item => 
+        item.toLowerCase().includes("chicken") || 
+        item.toLowerCase().includes("vegetable")
+      ),
+      vegetarian: false,
+      vegan: false,
+      glutenFree: true,
+      dairyFree: true,
+      cookingTime: '50 minutes'
     }
   ];
+  
+  console.log(`Filtering meals based on preferences: 
+    vegetarian: ${preferences.vegetarian}, 
+    vegan: ${preferences.vegan}, 
+    glutenFree: ${preferences.glutenFree}, 
+    dairyFree: ${preferences.dairyFree}`);
   
   // Filter based on dietary preferences if any are specified
   let filteredMeals = [...mockMeals];
   
   if (preferences.vegetarian) {
     filteredMeals = filteredMeals.filter(meal => meal.vegetarian);
+    console.log(`After vegetarian filter: ${filteredMeals.length} meals remain`);
   }
   
   if (preferences.vegan) {
     filteredMeals = filteredMeals.filter(meal => meal.vegan);
+    console.log(`After vegan filter: ${filteredMeals.length} meals remain`);
   }
   
   if (preferences.glutenFree) {
     filteredMeals = filteredMeals.filter(meal => meal.glutenFree);
+    console.log(`After gluten-free filter: ${filteredMeals.length} meals remain`);
   }
   
   if (preferences.dairyFree) {
     filteredMeals = filteredMeals.filter(meal => meal.dairyFree);
+    console.log(`After dairy-free filter: ${filteredMeals.length} meals remain`);
   }
   
-  // If no meals match the dietary preferences, return a subset of the original meals
+  // If no meals match the dietary preferences, return specially crafted meals that match
   if (filteredMeals.length === 0) {
-    filteredMeals = mockMeals.slice(0, 3);
+    console.log("No meals match dietary preferences, creating custom compliant meals");
+    
+    // Create at least one meal that matches all selected preferences
+    const customMeal = {
+      id: `${timestamp}-custom-1`,
+      title: preferences.vegan ? "Vegan Vegetable Stir Fry" : 
+             preferences.vegetarian ? "Vegetarian Pasta Bake" : 
+             "Custom Freezer Meal",
+      description: "A custom meal created to match your dietary preferences.",
+      ingredients: ["Frozen Vegetables", "Herbs", "Spices"],
+      matchedItems: freezerItems.filter(item => 
+        item.toLowerCase().includes("vegetable") || 
+        item.toLowerCase().includes("herb")
+      ),
+      vegetarian: preferences.vegetarian || preferences.vegan || false,
+      vegan: preferences.vegan || false,
+      glutenFree: preferences.glutenFree || false,
+      dairyFree: preferences.dairyFree || false,
+      cookingTime: '30 minutes'
+    };
+    
+    // Add more ingredients that would make sense for the dietary requirements
+    if (preferences.vegan) {
+      customMeal.ingredients.push("Tofu", "Plant-Based Sauce");
+      if (preferences.glutenFree) {
+        customMeal.ingredients.push("Rice Noodles");
+      } else {
+        customMeal.ingredients.push("Noodles");
+      }
+    } else if (preferences.vegetarian) {
+      if (!preferences.dairyFree) {
+        customMeal.ingredients.push("Cheese");
+      }
+      if (!preferences.glutenFree) {
+        customMeal.ingredients.push("Pasta");
+      } else {
+        customMeal.ingredients.push("Gluten-Free Pasta");
+      }
+    }
+    
+    filteredMeals = [customMeal];
+    
+    // Try to add one more compliant meal if possible
+    const secondMeal = {
+      id: `${timestamp}-custom-2`,
+      title: preferences.vegan ? "Vegan Bean Soup" : 
+             preferences.vegetarian ? "Vegetarian Stuffed Peppers" : 
+             "Customized Freezer Delight",
+      description: "Another meal option created to match your dietary preferences.",
+      ingredients: ["Frozen Vegetables", "Herbs", "Spices", "Beans"],
+      matchedItems: freezerItems.filter(item => 
+        item.toLowerCase().includes("vegetable") || 
+        item.toLowerCase().includes("bean")
+      ),
+      vegetarian: preferences.vegetarian || preferences.vegan || false,
+      vegan: preferences.vegan || false,
+      glutenFree: preferences.glutenFree || false,
+      dairyFree: preferences.dairyFree || false,
+      cookingTime: '40 minutes'
+    };
+    
+    filteredMeals.push(secondMeal);
   }
   
   // Limit to 3 meals and add images
   const mealsToReturn = filteredMeals.slice(0, 3);
+  console.log(`Returning ${mealsToReturn.length} meals that match dietary preferences`);
   
   // Add images to each meal
   const mealsWithImages = await Promise.all(

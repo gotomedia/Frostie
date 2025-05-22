@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { MealIdea } from '../types';
-import { Leaf, Wheat, Milk, Heart } from 'lucide-react';
+import { Leaf, Wheat, Milk, Heart, Clock, Trash2 } from 'lucide-react';
 
 interface MealIdeaCardProps {
   idea: MealIdea;
   onToggleFavorite?: (id: string) => void;
+  onRemove?: (id: string) => void; // New prop for delete functionality
 }
 
-const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite }) => {
+const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite, onRemove }) => {
   // Generate dietary tags based on meal properties
   const dietaryTags = [];
   
@@ -35,14 +36,23 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite }) =
       onToggleFavorite(idea.id);
     }
   };
+  
+  // Handle the delete button click
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onRemove) {
+      onRemove(idea.id);
+    }
+  };
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 relative">
-      {/* Favorite button */}
+      {/* Top left: Favorite button */}
       {onToggleFavorite && (
         <button 
           onClick={handleFavoriteClick}
-          className={`absolute top-2 right-2 p-2 rounded-full z-10 transition-colors ${
+          className={`absolute top-2 left-2 p-2 rounded-full z-10 transition-colors ${
             idea.favorite 
               ? 'bg-red-100 text-red-500 dark:bg-red-900/30 dark:text-red-400' 
               : 'bg-slate-100/80 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400'
@@ -53,6 +63,17 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite }) =
             size={18} 
             fill={idea.favorite ? "currentColor" : "none"} 
           />
+        </button>
+      )}
+      
+      {/* Top right: Delete button */}
+      {onRemove && (
+        <button
+          onClick={handleDeleteClick}
+          className="absolute top-2 right-2 p-2 rounded-full z-10 transition-colors bg-slate-100/80 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400"
+          aria-label="Delete meal idea"
+        >
+          <Trash2 size={18} />
         </button>
       )}
 
@@ -71,6 +92,12 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite }) =
       <div className="p-4">
         <h3 className="font-medium text-lg text-slate-800 dark:text-slate-100">{idea.title}</h3>
         <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">{idea.description}</p>
+        
+        {/* Cooking time */}
+        <div className="flex items-center mt-2 text-sm text-slate-500 dark:text-slate-400">
+          <Clock size={14} className="mr-1" />
+          {idea.cookingTime || 'N/A'}
+        </div>
         
         {/* Dietary tags */}
         {dietaryTags.length > 0 && (
@@ -107,4 +134,5 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite }) =
   );
 };
 
-export default MealIdeaCard;
+// Memoize the component to prevent unnecessary re-renders
+export default memo(MealIdeaCard);

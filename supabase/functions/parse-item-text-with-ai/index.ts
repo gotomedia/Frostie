@@ -35,6 +35,9 @@ serve(async (req) => {
       );
     }
 
+    // Log important values for debugging
+    console.log(`Processing input text: "${inputText}", defaultExpirationDays: ${defaultExpirationDays}`);
+
     // Get the API key from the environment
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     
@@ -72,7 +75,7 @@ serve(async (req) => {
       - expirationDate: The expiration date of the food item in ISO format (YYYY-MM-DD).
         - If a specific date is given, use that date
         - If a relative period is mentioned (like "expires in 2 weeks" or "good for 3 days"), calculate the date by adding that period to TODAY'S date. TODAY is ${new Date().toISOString().split('T')[0]}.
-        - Default to ${defaultExpirationDays} days from today if not specified.
+        - If no explicit expiration is mentioned, set to null so we can use FoodKeeper database for accurate lookup
       - tags: A list of 2-3 relevant tags for the food item (e.g., protein, dinner, breakfast, homemade, italian)
       
       Text: "${inputText}"
@@ -83,7 +86,7 @@ serve(async (req) => {
         "quantity": number,
         "category": string,
         "size": string,
-        "expirationDate": string (ISO date format YYYY-MM-DD),
+        "expirationDate": string (ISO date format YYYY-MM-DD) or null,
         "tags": string[]
       }
     `;
@@ -111,22 +114,50 @@ serve(async (req) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
-      // Validate and fix the response data
-      let expirationDate;
+      // STEP 1: Check if AI provided a valid, future expiration date
+      let expirationDate = null;
+      let expirationSource = "default"; // Track where the expiration date came from
+      
       if (isValidDateString(parsedData.expirationDate)) {
-        expirationDate = new Date(parsedData.expirationDate);
+        const aiProvidedDate = new Date(parsedData.expirationDate);
         
-        // Ensure the date is in the future
-        if (expirationDate < today) {
-          console.warn("AI returned a date in the past:", expirationDate);
-          // Default to user's specified days from now
-          expirationDate = new Date();
-          expirationDate.setDate(expirationDate.getDate() + defaultExpirationDays);
+        // Ensure the AI-provided date is in the future
+        if (aiProvidedDate > today) {
+          expirationDate = aiProvidedDate;
+          expirationSource = "ai";
+          console.log("Using AI-provided future date:", expirationDate.toISOString());
+        } else {
+          console.warn("AI returned a date in the past:", parsedData.expirationDate);
+          // We'll check FoodKeeper next
         }
-      } else {
-        // Default to user's specified days from now
-        expirationDate = new Date();
-        expirationDate.setDate(expirationDate.getDate() + defaultExpirationDays);
+      }
+      
+      // STEP 2: If AI didn't provide a valid future date, check FoodKeeper
+      if (!expirationDate) {
+        console.log(`🔍 FoodKeeper lookup: Looking up "${parsedData.name}" in category "${parsedData.category}"`);
+        const foodkeeperExpDate = getFoodkeeperExpirationDate(
+          parsedData.name,
+          parsedData.category,
+          defaultExpirationDays
+        );
+        
+        // Check if FoodKeeper provided a different date than the default
+        const defaultDate = new Date(today);
+        defaultDate.setDate(defaultDate.getDate() + defaultExpirationDays);
+        const daysFromNow = Math.round((foodkeeperExpDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (foodkeeperExpDate.getTime() !== defaultDate.getTime()) {
+          // FoodKeeper gave us a specific date, use it
+          expirationDate = foodkeeperExpDate;
+          expirationSource = "foodkeeper";
+          console.log(`✅ SUCCESS: FoodKeeper match found for "${parsedData.name}": ${foodkeeperExpDate.toISOString().split('T')[0]} (${daysFromNow} days)`);
+        } else {
+          // STEP 3: If no specific FoodKeeper data, use default days
+          expirationDate = defaultDate;
+          expirationSource = "default";
+          console.log(`❌ FoodKeeper match not found for "${parsedData.name}"`);
+          console.log(`Using default: ${defaultExpirationDays} days (explicitly passed in request)`);
+        }
       }
       
       // Convert to ISO format with only the date part (YYYY-MM-DD)
@@ -141,7 +172,7 @@ serve(async (req) => {
         tags: Array.isArray(parsedData.tags) ? parsedData.tags.map(t => String(t)) : []
       };
       
-      console.log("Validated data:", validatedData);
+      console.log("Validated data:", validatedData, "Expiration source:", expirationSource);
       
       return new Response(
         JSON.stringify({ parsedDetails: validatedData, source: "gemini" }),
@@ -220,7 +251,7 @@ function isValidDateString(dateString: string): boolean {
 }
 
 // Improved fallback parser to use when Gemini API is not available
-function fallbackParser(input: string, defaultExpirationDays: number): any {
+function fallbackParser(input: string, defaultExpirationDays: number = 30): any {
   console.log("Using fallback parser for input:", input);
   console.log("Using default expiration days:", defaultExpirationDays);
   
@@ -235,11 +266,12 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  // Default expiration date is user-specified days from today
-  let expirationDate = new Date(today);
-  expirationDate.setDate(today.getDate() + defaultExpirationDays);
-
-  console.log("Initial defaulted expiration date:", expirationDate.toISOString());
+  // Initialize expirationDate as null to track if we found an explicit date
+  let expirationDate: Date | null = null;
+  let expirationSource = "default"; // Track source of expiration date
+  let explicitExpirationFound = false;
+  
+  console.log("Initial defaulted expiration date not set, will check for explicit date first");
 
   // Extract tags (words with # prefix)
   const tagRegex = /#(\w+)/g;
@@ -268,6 +300,7 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
 
   console.log("Checking date patterns in:", name);
   
+  // STEP 1: Check for explicit expiration date in text
   for (const pattern of datePatterns) {
     const match = name.match(pattern.regex);
     if (match) {
@@ -289,9 +322,11 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
             // Check if the date is in the future
             if (parsedDate > today) {
               expirationDate = parsedDate;
+              expirationSource = "explicit";
+              explicitExpirationFound = true;
               console.log("Set exact date:", expirationDate.toISOString());
             } else {
-              console.log("Date is in the past, using default");
+              console.log("Date is in the past, will try FoodKeeper next");
             }
           }
         } catch (e) {
@@ -337,6 +372,8 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
               break;
           }
           
+          expirationSource = "explicit";
+          explicitExpirationFound = true;
           console.log("Calculated relative date:", expirationDate.toISOString());
         }
       }
@@ -376,14 +413,35 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
   // Guess category based on common food types
   category = guessCategory(name);
 
-  // Capitalize the first letter of each word
-  if (name.length > 0) {
-    name = name.split(' ')
-      .map(word => {
-        if (word.length === 0) return word;
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      })
-      .join(' ');
+  // STEP 2: Check FoodKeeper database if no explicit date or if explicit date is in the past
+  if (!explicitExpirationFound || expirationSource === "default") {
+    console.log(`🔍 FoodKeeper lookup: Looking for "${name}" in category "${category}"`);
+    console.log(`Using passed defaultExpirationDays: ${defaultExpirationDays}`);
+    const foodkeeperExpDate = getFoodkeeperExpirationDate(name, category, defaultExpirationDays);
+    
+    // Check if FoodKeeper gave us a date different from the default
+    const defaultDate = new Date(today);
+    defaultDate.setDate(today.getDate() + defaultExpirationDays);
+    const daysFromNow = Math.round((foodkeeperExpDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (foodkeeperExpDate.getTime() !== defaultDate.getTime()) {
+      expirationDate = foodkeeperExpDate;
+      expirationSource = "foodkeeper";
+      console.log(`✅ SUCCESS: FoodKeeper match found for "${name}": ${foodkeeperExpDate.toISOString().split('T')[0]} (${daysFromNow} days)`);
+    } else {
+      console.log(`❌ FoodKeeper match not found for "${name}"`);
+      console.log(`Using default expiration of ${defaultExpirationDays} days`);
+      expirationDate = defaultDate;
+      expirationSource = "default";
+    }
+  }
+
+  // STEP 3: If no specific date found, use the default
+  if (!expirationDate) {
+    console.log("Using default expiration of", defaultExpirationDays, "days");
+    expirationDate = new Date(today);
+    expirationDate.setDate(today.getDate() + defaultExpirationDays);
+    expirationSource = "default";
   }
 
   // If no tags were extracted, suggest some based on the category
@@ -391,7 +449,7 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
     tags = suggestBasicTags(name, category);
   }
 
-  // Convert to ISO date string - using only the date part (YYYY-MM-DD)
+  // Convert to ISO date string
   const isoDateStr = expirationDate.toISOString().split('T')[0];
   
   console.log("Final parsed result:", {
@@ -400,7 +458,8 @@ function fallbackParser(input: string, defaultExpirationDays: number): any {
     category,
     size,
     expirationDate: isoDateStr,
-    tags
+    tags,
+    source: expirationSource
   });
 
   return {
@@ -513,4 +572,103 @@ function suggestBasicTags(name: string, category: string): string[] {
   }
   
   return tags.slice(0, 3); // Limit to 3 tags
+}
+
+// Implementation of FoodKeeper lookups without importing the actual module
+// This is a simplified version just for the edge function
+function getFoodkeeperExpirationDate(
+  itemName: string,
+  category: string = 'Other',
+  defaultDays: number = 30
+): Date {
+  console.log(`🔍 FoodKeeper detailed lookup for "${itemName}" (${category}), defaultDays: ${defaultDays}`);
+  
+  // Map of common foods to expiration times (in days)
+  const simpleFoodkeeperData: Record<string, number> = {
+    // Meat & Poultry
+    'chicken': 270, // 9 months
+    'beef': 240,    // 8 months
+    'turkey': 360,  // 12 months
+    'pork': 180,    // 6 months
+    
+    // Seafood
+    'fish': 180,    // 6 months
+    'shrimp': 180,  // 6 months
+    'salmon': 90,   // 3 months
+    
+    // Fruits & Vegetables
+    'vegetables': 300, // 10 months
+    'fruit': 300,      // 10 months
+    'berries': 240,    // 8 months
+    
+    // Prepared
+    'soup': 60,        // 2 months
+    'stew': 90,        // 3 months
+    'leftovers': 60,   // 2 months
+    
+    // Bakery
+    'bread': 90,       // 3 months
+    'dough': 60,       // 2 months
+    
+    // Dairy
+    'ice cream': 180,  // 6 months
+    'butter': 180,     // 6 months
+    'cheese': 180      // 6 months
+  };
+  
+  // Look for matches in the data
+  const lowerName = itemName.toLowerCase();
+  let bestMatchDays = null;
+  let bestMatchFood = null;
+  
+  for (const [food, days] of Object.entries(simpleFoodkeeperData)) {
+    if (lowerName.includes(food)) {
+      console.log(`✓ FoodKeeper match: "${food}" with ${days} days for "${itemName}"`);
+      bestMatchDays = days;
+      bestMatchFood = food;
+      break;
+    }
+  }
+  
+  // If no match found in the simple data, use the default days
+  if (bestMatchDays === null) {
+    console.log(`❌ FoodKeeper match not found for "${itemName}"`);
+    // Special handling for categories when no specific match
+    let categoryDays = null;
+    switch(category) {
+      case 'Meat & Poultry':
+        categoryDays = 240; // 8 months
+        break;
+      case 'Seafood':
+        categoryDays = 180; // 6 months
+        break;
+      case 'Fruits & Vegetables':
+        categoryDays = 300; // 10 months
+        break;
+      case 'Prepared Meals':
+        categoryDays = 60;  // 2 months
+        break;
+      default:
+        categoryDays = defaultDays;
+    }
+    
+    if (categoryDays !== defaultDays) {
+      console.log(`✓ FoodKeeper category match: "${category}" with ${categoryDays} days for "${itemName}"`);
+      bestMatchDays = categoryDays;
+    } else {
+      console.log(`✗ No FoodKeeper category match found for "${itemName}", using default: ${defaultDays} days`);
+      bestMatchDays = defaultDays;
+    }
+  } else {
+    console.log(`✅ SUCCESS: FoodKeeper provided specific data for "${itemName}" based on "${bestMatchFood}"`);
+    console.log(`✅ FoodKeeper match found for "${itemName}"`);
+  }
+  
+  // Calculate the expiration date
+  const date = new Date();
+  date.setDate(date.getDate() + bestMatchDays);
+  
+  console.log(`FoodKeeper expiration result: ${date.toISOString().split('T')[0]} (${bestMatchDays} days from now)`);
+  
+  return date;
 }
