@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { ShoppingItem } from '../types';
 import { getCategories } from '../data/categories';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 interface EditShoppingItemModalProps {
   item: ShoppingItem;
@@ -22,8 +23,8 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
   const [category, setCategory] = useState(item.category);
   const [completed, setCompleted] = useState(item.completed);
   
-  const modalRef = useRef<HTMLDivElement>(null);
-  const initialFocusRef = useRef<HTMLInputElement>(null);
+  // Use focus trap for keyboard navigation
+  const focusTrapRef = useFocusTrap(isOpen);
   
   // Get all available categories
   const allCategories = propCategories.length > 0 
@@ -35,11 +36,6 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
       setName(item.name);
       setCategory(item.category);
       setCompleted(item.completed);
-      
-      // Focus on the first input when the modal opens
-      setTimeout(() => {
-        initialFocusRef.current?.focus();
-      }, 50);
     }
   }, [isOpen, item]);
 
@@ -71,6 +67,18 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
+  
+  // Listen for the custom event from the focus trap hook
+  useEffect(() => {
+    const handleCloseFocusTrap = () => {
+      if (isOpen) onClose();
+    };
+    
+    document.addEventListener('closeFocusTrap', handleCloseFocusTrap);
+    return () => {
+      document.removeEventListener('closeFocusTrap', handleCloseFocusTrap);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
   
@@ -85,13 +93,13 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
       aria-labelledby={modalTitleId}
     >
       <div 
-        ref={modalRef}
+        ref={focusTrapRef}
         className="bg-white dark:bg-slate-800 rounded-lg shadow-lg w-full max-w-md relative"
         tabIndex={-1}
       >
         <button 
           onClick={onClose} 
-          className="absolute right-4 top-4 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          className="absolute right-4 top-4 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
           aria-label="Close dialog"
         >
           <X size={20} aria-hidden="true" />
@@ -109,10 +117,9 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
                 <input
                   type="text"
                   id={`name-${item.id}`}
-                  ref={initialFocusRef}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                   required
                 />
               </div>
@@ -125,7 +132,8 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
                   id={`category-${item.id}`}
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  aria-label="Item category"
                 >
                   {allCategories.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -139,7 +147,7 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
                   id={`completed-${item.id}`}
                   checked={completed}
                   onChange={(e) => setCompleted(e.target.checked)}
-                  className="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-700"
+                  className="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus-visible:ring-blue-500 dark:bg-slate-700"
                 />
                 <label htmlFor={`completed-${item.id}`} className="ml-2 block text-sm text-slate-700 dark:text-slate-300">
                   Completed
@@ -151,13 +159,13 @@ const EditShoppingItemModal: React.FC<EditShoppingItemModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 Save Changes
               </button>

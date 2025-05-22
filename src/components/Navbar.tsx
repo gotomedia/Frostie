@@ -22,7 +22,11 @@ const Navbar: React.FC<NavbarProps> = ({
   if (isDesktop) {
     // Desktop sidebar navigation
     return (
-      <aside className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-800 shadow-sm p-4 hidden md:block">
+      <aside 
+        className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-800 shadow-sm p-4 hidden md:block"
+        role="navigation"
+        aria-label="Main navigation"
+      >
         <div className="flex items-center gap-3 mb-8 mt-2 px-2">
           <div className="bg-blue-100 dark:bg-blue-900 rounded-full p-2 text-blue-600 dark:text-blue-400">
             {navItems[0].icon}
@@ -30,7 +34,7 @@ const Navbar: React.FC<NavbarProps> = ({
           <h2 className="text-xl font-bold text-slate-800 dark:text-white">Frostie</h2>
         </div>
         
-        <nav aria-label="Main Navigation">
+        <nav>
           <ul className="space-y-1" role="list">
             {navItems.map(item => (
               <li key={item.id} role="listitem">
@@ -57,7 +61,11 @@ const Navbar: React.FC<NavbarProps> = ({
   
   // Mobile bottom tab navigation
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 z-10 md:hidden" aria-label="Main Navigation">
+    <nav 
+      className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 z-10 md:hidden"
+      role="navigation" 
+      aria-label="Main navigation"
+    >
       <ul className="flex" role="list">
         {navItems.map(item => (
           <li key={item.id} className="flex-1" role="listitem">

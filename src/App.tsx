@@ -16,6 +16,7 @@ import {
 import { AuthContext, AuthProvider } from './contexts/AuthContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { StorageProvider } from './store/StorageContext';
+import SkipLink from './components/SkipLink';
 
 const AppContent: React.FC = () => {
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
@@ -55,14 +56,16 @@ const AppContent: React.FC = () => {
 
   return (
     <div className={`flex min-h-screen bg-slate-50 dark:bg-slate-900`}>
+      <SkipLink target="main-content" />
+      
       <Navbar 
         navItems={navItems}
         currentPath={location.pathname}
         isDesktop={isDesktop}
       />
       
-      <main className="flex-1 p-4 md:p-6 ml-0 md:ml-64">
-        <header className="flex items-center gap-2 mb-6">
+      <main id="main-content" className="flex-1 p-4 md:p-6 ml-0 md:ml-64">
+        <header role="banner" className="flex items-center gap-2 mb-6">
           <Snowflake className="text-blue-500" size={28} aria-hidden="true" />
           <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Frostie</h1>
         </header>

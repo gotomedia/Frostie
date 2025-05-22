@@ -37,6 +37,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   
   // Speech recognition setup
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -307,6 +308,8 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
     return placeholder;
   };
 
+  const inputBarId = 'universal-input-bar';
+
   return (
     <>
       <div 
@@ -330,10 +333,16 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
             aria-valuenow={uploadProgress}
             aria-valuemin={0}
             aria-valuemax={100}
-          />
+          >
+            <span className="sr-only">Uploading image: {Math.round(uploadProgress)}%</span>
+          </div>
         )}
         
-        <form onSubmit={handleSubmit} className="input-bar-form">
+        <form 
+          ref={formRef}
+          onSubmit={handleSubmit} 
+          className="input-bar-form"
+        >
           <div className="input-field-container">
             <Input
               ref={inputRef}
@@ -346,11 +355,12 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
               onBlur={() => setIsFocused(false)}
               aria-label="Item name input"
               disabled={isLoading || isUploading || isParsing || voiceState !== 'inactive'}
+              id={`${inputBarId}-text-input`}
             />
           </div>
           
           <div className="input-bar-actions">
-            <div className="left-actions">
+            <div className="left-actions" role="group" aria-label="Input options">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -358,6 +368,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
                 accept="image/*"
                 className="hidden-file-input"
                 aria-hidden="true"
+                id={`${inputBarId}-file-input`}
               />
               <Button 
                 variant="icon"
@@ -414,8 +425,10 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
                     type="button"
                     className="icon-button recording"
                     aria-label="Stop recording"
+                    aria-pressed="true"
                   >
                     <Square size={20} className="text-red-500" aria-hidden="true" />
+                    <span className="sr-only">Stop recording</span>
                   </Button>
                 ) : voiceState === 'processing' ? (
                   <Button
@@ -426,6 +439,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
                     disabled
                   >
                     <Loader size={20} className="animate-spin text-blue-500" aria-hidden="true" />
+                    <span className="sr-only">Processing voice input</span>
                   </Button>
                 ) : (
                   <Button
@@ -435,8 +449,10 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
                     className="icon-button secondary"
                     aria-label="Voice input"
                     disabled={isLoading || isUploading || isParsing || !hasSpeechRecognition}
+                    aria-pressed="false"
                   >
                     <Mic size={20} className="text-gray-500 dark:text-gray-400" aria-hidden="true" />
+                    <span className="sr-only">Start voice input</span>
                   </Button>
                 )
               )}

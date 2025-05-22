@@ -46,8 +46,15 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite, onR
     }
   };
 
+  const cardId = `meal-idea-${idea.id}`;
+
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 relative">
+    <div 
+      className="bg-white dark:bg-slate-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 relative"
+      role="article"
+      aria-labelledby={`${cardId}-title`}
+      aria-describedby={`${cardId}-description`}
+    >
       {/* Top left: Favorite button */}
       {onToggleFavorite && (
         <button 
@@ -58,10 +65,12 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite, onR
               : 'bg-slate-100/80 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400'
           }`}
           aria-label={idea.favorite ? "Remove from favorites" : "Add to favorites"}
+          aria-pressed={idea.favorite}
         >
           <Heart 
             size={18} 
             fill={idea.favorite ? "currentColor" : "none"} 
+            aria-hidden="true" 
           />
         </button>
       )}
@@ -73,14 +82,14 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite, onR
           className="absolute top-2 right-2 p-2 rounded-full z-10 transition-colors bg-slate-100/80 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400"
           aria-label="Delete meal idea"
         >
-          <Trash2 size={18} />
+          <Trash2 size={18} aria-hidden="true" />
         </button>
       )}
 
       <div className="h-48 overflow-hidden">
         <img 
           src={idea.imageUrl} 
-          alt={idea.title} 
+          alt="" // Decorative image, non-essential content
           className="w-full h-full object-cover"
           loading="lazy"
           onError={(e) => {
@@ -90,24 +99,35 @@ const MealIdeaCard: React.FC<MealIdeaCardProps> = ({ idea, onToggleFavorite, onR
         />
       </div>
       <div className="p-4">
-        <h3 className="font-medium text-lg text-slate-800 dark:text-slate-100">{idea.title}</h3>
-        <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">{idea.description}</p>
+        <h3 
+          id={`${cardId}-title`} 
+          className="font-medium text-lg text-slate-800 dark:text-slate-100"
+        >
+          {idea.title}
+        </h3>
+        <p 
+          id={`${cardId}-description`} 
+          className="text-slate-600 dark:text-slate-300 text-sm mt-1"
+        >
+          {idea.description}
+        </p>
         
         {/* Cooking time */}
         <div className="flex items-center mt-2 text-sm text-slate-500 dark:text-slate-400">
-          <Clock size={14} className="mr-1" />
-          {idea.cookingTime || 'N/A'}
+          <Clock size={14} className="mr-1" aria-hidden="true" />
+          <span>{idea.cookingTime || 'N/A'}</span>
         </div>
         
         {/* Dietary tags */}
         {dietaryTags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
+            <span className="sr-only">Dietary preferences:</span>
             {dietaryTags.map((tag, index) => (
               <span
                 key={index}
                 className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs"
               >
-                {tag.icon}
+                <span aria-hidden="true">{tag.icon}</span>
                 {tag.label}
               </span>
             ))}

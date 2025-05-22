@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Calendar, Tag, Plus, XCircle, Image } from 'lucide-react';
 import { FreezerItem } from '../types';
 import AccessibleDatepicker from './AccessibleDatepicker';
 import { getCategories } from '../data/categories';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 interface EditFreezerItemModalProps {
   item: FreezerItem;
@@ -30,9 +31,9 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
   const [tags, setTags] = useState<string[]>(item.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [imageUrl, setImageUrl] = useState(item.imageUrl || '');
-  
-  const modalRef = useRef<HTMLDivElement>(null);
-  const initialFocusRef = useRef<HTMLInputElement>(null);
+
+  // Use the focus trap hook for keyboard navigation
+  const focusTrapRef = useFocusTrap(isOpen);
 
   // Get all available categories
   const allCategories = propCategories.length > 0 
@@ -54,11 +55,6 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       setTags(item.tags || []);
       setImageUrl(item.imageUrl || '');
       setTagInput('');
-      
-      // Focus on the first input when the modal opens
-      setTimeout(() => {
-        initialFocusRef.current?.focus();
-      }, 50);
     }
   }, [isOpen, item]);
 
@@ -113,6 +109,18 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
+  
+  // Listen for the custom event from the focus trap hook
+  useEffect(() => {
+    const handleCloseFocusTrap = () => {
+      if (isOpen) onClose();
+    };
+    
+    document.addEventListener('closeFocusTrap', handleCloseFocusTrap);
+    return () => {
+      document.removeEventListener('closeFocusTrap', handleCloseFocusTrap);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
   
@@ -127,13 +135,13 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       aria-labelledby={modalTitleId}
     >
       <div 
-        ref={modalRef}
+        ref={focusTrapRef}
         className="bg-white dark:bg-slate-800 rounded-lg shadow-lg w-full max-w-md relative"
         tabIndex={-1}
       >
         <button 
           onClick={onClose} 
-          className="absolute right-4 top-4 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          className="absolute right-4 top-4 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
           aria-label="Close dialog"
         >
           <X size={20} aria-hidden="true" />
@@ -151,10 +159,9 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                 <input
                   type="text"
                   id={`name-${item.id}`}
-                  ref={initialFocusRef}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                   required
                 />
               </div>
@@ -167,7 +174,8 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                   id={`category-${item.id}`}
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  aria-label="Item category"
                 >
                   {allCategories.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -186,7 +194,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                     value={quantity}
                     min="1"
                     onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                   />
                 </div>
                 
@@ -200,7 +208,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                     value={size}
                     placeholder="e.g., 500g, 1lb, 2oz"
                     onChange={(e) => setSize(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                   />
                 </div>
               </div>
@@ -228,7 +236,8 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                         value={imageUrl}
                         onChange={(e) => setImageUrl(e.target.value)}
                         placeholder="https://example.com/image.jpg"
-                        className="hidden w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                        className="hidden w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                        aria-label="Image URL"
                       />
                       <Image className="absolute right-3 top-2.5 text-slate-400 dark:text-slate-500" size={16} aria-hidden="true" />
                     </div>
@@ -238,7 +247,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                       <div className="relative w-full h-32 bg-slate-100 dark:bg-slate-700 rounded-md overflow-hidden">
                         <img 
                           src={imageUrl} 
-                          alt={name} 
+                          alt={`${name} preview`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             // If image fails to load, hide it
@@ -264,7 +273,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                       onChange={(e) => setTagInput(e.target.value)}
                       onKeyDown={handleTagInputKeyDown}
                       placeholder="Add tags (press Enter)"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                       aria-describedby={`tags-help-${item.id}`}
                     />
                     <Tag className="absolute right-3 top-2.5 text-slate-400 dark:text-slate-500" size={16} aria-hidden="true" />
@@ -272,7 +281,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                   <button
                     type="button"
                     onClick={handleAddTag}
-                    className="ml-2 p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="ml-2 p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     aria-label="Add tag"
                   >
                     <Plus size={16} aria-hidden="true" />
@@ -294,7 +303,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveTag(tag)}
-                          className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full"
+                          className="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-full"
                           aria-label={`Remove tag ${tag}`}
                         >
                           <XCircle size={14} aria-hidden="true" />
@@ -314,7 +323,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                   aria-describedby={`notes-help-${item.id}`}
                 />
                 <p id={`notes-help-${item.id}`} className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -327,13 +336,13 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
                 Save Changes
               </button>

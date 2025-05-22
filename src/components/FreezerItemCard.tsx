@@ -29,15 +29,18 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
   };
 
   const expirationText = daysLeft <= 0 ? 'Expired' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} until expiration`;
+  const cardId = `freezer-item-${item.id}`;
 
   return (
     <div 
       className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-start hover:shadow-md transition-shadow duration-200"
-      aria-label={`${item.name}, ${item.size ? item.size + ',' : ''} ${item.category}, ${expirationText}`}
+      aria-labelledby={`${cardId}-name`}
+      role="article"
+      aria-describedby={`${cardId}-expiration`}
     >
       <div className="flex-1">
         <div className="flex items-center gap-2">
-          <h3 className="font-medium text-slate-800 dark:text-slate-100">{item.name}</h3>
+          <h3 id={`${cardId}-name`} className="font-medium text-slate-800 dark:text-slate-100">{item.name}</h3>
           {item.size && (
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {item.size}
@@ -51,21 +54,22 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
           </span>
           {item.quantity > 1 && (
             <>
-              <span className="mx-2 text-slate-400 dark:text-slate-500">•</span>
+              <span className="mx-2 text-slate-400 dark:text-slate-500" aria-hidden="true">•</span>
               <span className="text-slate-600 dark:text-slate-300 text-xs">
                 Qty: {item.quantity}
               </span>
             </>
           )}
-          <span className="mx-2 text-slate-400 dark:text-slate-500">•</span>
+          <span className="mx-2 text-slate-400 dark:text-slate-500" aria-hidden="true">•</span>
           <span className="flex items-center gap-1 text-slate-500 dark:text-slate-300">
             <Calendar size={14} aria-hidden="true" />
-            Added {new Date(item.addedDate).toLocaleDateString()}
+            <span>Added {new Date(item.addedDate).toLocaleDateString()}</span>
           </span>
         </div>
         
         {item.tags && item.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5" aria-label="Tags">
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            <span className="sr-only">Tags:</span>
             {item.tags.map((tag, index) => (
               <span 
                 key={index} 
@@ -93,7 +97,7 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
               />
             </div>
             <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-              <Image size={12} />
+              <Image size={12} aria-hidden="true" />
               Image attached
             </span>
           </div>
@@ -101,7 +105,11 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
       </div>
       
       <div className="flex items-center gap-3">
-        <div className={`flex items-center gap-1 ${getExpirationStatus()}`} aria-live="polite">
+        <div 
+          id={`${cardId}-expiration`} 
+          className={`flex items-center gap-1 ${getExpirationStatus()}`} 
+          aria-live="polite"
+        >
           <span className="text-sm font-medium">
             {daysLeft <= 0 
               ? 'Expired' 
@@ -111,7 +119,7 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
         
         <button 
           onClick={() => onEdit(item)}
-          className="text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 rounded-full p-1"
+          className="text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-800 rounded-full p-1"
           aria-label={`Edit ${item.name}`}
         >
           <Edit2 size={18} aria-hidden="true" />
@@ -119,7 +127,7 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
         
         <button 
           onClick={() => onRemove(item.id)}
-          className="text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 rounded-full p-1"
+          className="text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-800 rounded-full p-1"
           aria-label={`Remove ${item.name}`}
         >
           <Trash2 size={18} aria-hidden="true" />

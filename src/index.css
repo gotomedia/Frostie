@@ -83,6 +83,50 @@
     /* Fix for Firefox */
     appearance: none;
   }
+  
+  /* Restore focus styles */
+  *:focus-visible {
+    outline: 2px solid theme('colors.blue.500');
+    outline-offset: 2px;
+  }
+  
+  /* Custom focus styles for interactive elements */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-slate-800 outline-none;
+  }
+  
+  /* Make focus styles more visible in dark mode */
+  .dark *:focus-visible {
+    outline-color: theme('colors.blue.400');
+  }
+  
+  /* Skip link styling */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  
+  .sr-only.focus-visible:not(.sr-only) {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: initial;
+    margin: initial;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
 }
 
 /* Barcode scanner animation */

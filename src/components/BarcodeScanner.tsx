@@ -3,6 +3,7 @@ import { X, CameraOff, AlertCircle, Loader, Camera, CheckCircle, Square } from '
 import Quagga from '@ericblade/quagga2';
 import { searchOpenFoodFacts, extractBarcodeFromImage } from '../api/supabase';
 import { validateBarcode, getBarcodeFormat, calculateBarcodeConfidence, attemptBarcodeRepair, areSimilarBarcodes } from '../utils/barcodeUtils';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 interface BarcodeScannerProps {
   onClose: () => void;
@@ -150,6 +151,9 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   const resizeTimeout = useRef<NodeJS.Timeout | null>(null); // For debouncing resize events
   const quaggaStreamRef = useRef<MediaStream | null>(null); // Track the active camera stream
   const cameraReadyTimerRef = useRef<NodeJS.Timeout | null>(null); // Timer for camera ready state
+  
+  // Use focus trap for accessibility
+  const focusTrapRef = useFocusTrap(true);
   
   // Check if device is mobile
   const isMobile = useCallback(() => {
@@ -710,7 +714,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     if (!state.hasCamera || state.hasCameraPermission === 'denied') {
       return (
         <div className="flex flex-col items-center justify-center h-full text-white p-6 text-center">
-          <CameraOff size={48} className="mb-4 text-red-500" />
+          <CameraOff size={48} className="mb-4 text-red-500" aria-hidden="true" />
           <h3 className="text-xl font-medium mb-2">Camera not available</h3>
           <p className="mb-6">
             {state.hasCameraPermission === 'denied' 
@@ -719,7 +723,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           </p>
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Close
           </button>
@@ -730,18 +734,18 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     if (state.error && state.error !== 'No barcode detected. Please try again.' && !state.scanActive) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-white p-6 text-center">
-          <AlertCircle size={48} className="mb-4 text-yellow-500" />
+          <AlertCircle size={48} className="mb-4 text-yellow-500" aria-hidden="true" />
           <h3 className="text-xl font-medium mb-2">Camera Error</h3>
           <p className="mb-6">{state.error}</p>
           <button
             onClick={() => initializeScanner()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg mr-2"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg mr-2 focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Try Again
           </button>
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-slate-600 text-white rounded-lg mt-2"
+            className="px-6 py-2 bg-slate-600 text-white rounded-lg mt-2 focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Close
           </button>
@@ -756,13 +760,15 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           ref={scannerRef} 
           className="absolute inset-0 bg-black overflow-hidden"
           style={{ width: '100%', height: '100%' }}
+          aria-live="polite"
+          aria-atomic="true"
         >
           {/* This is where Quagga will insert the video element */}
         </div>
         
         {/* Enhanced scanning guide overlay */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="relative border-2 border-white border-opacity-70 rounded-lg w-[300px] h-[200px]">
+          <div className="relative border-2 border-white border-opacity-70 rounded-lg w-[300px] h-[200px]" aria-hidden="true">
             {/* Corner markers */}
             <div className="absolute -top-2 -left-2 w-8 h-8 border-t-2 border-l-2 border-blue-400 rounded-tl-md"></div>
             <div className="absolute -top-2 -right-2 w-8 h-8 border-t-2 border-r-2 border-blue-400 rounded-tr-md"></div>
@@ -782,7 +788,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         </div>
 
         {/* Status message */}
-        <div className="absolute top-8 left-0 right-0 flex justify-center">
+        <div className="absolute top-8 left-0 right-0 flex justify-center" aria-live="assertive">
           <div className={`px-4 py-2 rounded-full text-sm font-medium text-white ${
             scanSucceeded 
               ? 'bg-green-600/80'
@@ -796,11 +802,11 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
                       ? 'bg-green-600/80'
                       : 'bg-black/60'
           }`}>
-            {scanSucceeded && <CheckCircle size={16} className="inline-block mr-1" />}
-            {state.searchFailed && <AlertCircle size={16} className="inline-block mr-1" />}
-            {state.isSearching && <Loader size={16} className="inline-block mr-1 animate-spin" />}
-            {state.isCapturing && <Loader size={16} className="inline-block mr-1 animate-spin" />}
-            {state.isProcessing && !state.isSearching && !scanSucceeded && <Loader size={16} className="inline-block mr-1 animate-spin" />}
+            {scanSucceeded && <CheckCircle size={16} className="inline-block mr-1" aria-hidden="true" />}
+            {state.searchFailed && <AlertCircle size={16} className="inline-block mr-1" aria-hidden="true" />}
+            {state.isSearching && <Loader size={16} className="inline-block mr-1 animate-spin" aria-hidden="true" />}
+            {state.isCapturing && <Loader size={16} className="inline-block mr-1 animate-spin" aria-hidden="true" />}
+            {state.isProcessing && !state.isSearching && !scanSucceeded && <Loader size={16} className="inline-block mr-1 animate-spin" aria-hidden="true" />}
             <span>
               {scanSucceeded
                 ? `Barcode ${state.currentBarcode} processed successfully!`
@@ -819,9 +825,9 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         
         {/* Error message if present */}
         {state.error && !state.searchFailed && (
-          <div className="absolute top-20 left-0 right-0 flex justify-center">
+          <div className="absolute top-20 left-0 right-0 flex justify-center" role="alert">
             <div className="px-4 py-2 rounded-full text-sm font-medium text-white bg-red-600/80">
-              <AlertCircle size={16} className="inline-block mr-1" />
+              <AlertCircle size={16} className="inline-block mr-1" aria-hidden="true" />
               <span>{state.error}</span>
             </div>
           </div>
@@ -832,7 +838,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           <div className="absolute bottom-24 left-0 right-0 flex justify-center">
             <button 
               onClick={handleCaptureButtonClick}
-              className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 p-6 rounded-full shadow-lg flex items-center justify-center"
+              className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 p-6 rounded-full shadow-lg flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
               aria-label="Capture barcode"
             >
               <Camera size={30} aria-hidden="true" />
@@ -845,9 +851,9 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           <div className="absolute bottom-24 left-0 right-0 flex justify-center">
             <button 
               onClick={handleScanNextItem}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center justify-center"
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
-              <Camera size={20} className="mr-2" />
+              <Camera size={20} className="mr-2" aria-hidden="true" />
               Scan Next Item
             </button>
           </div>
@@ -866,12 +872,20 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+    <div 
+      className="fixed inset-0 z-50 bg-black flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="barcode-scanner-title"
+      ref={focusTrapRef}
+    >
       {/* Header with just the close button */}
-      <div className="relative z-10 p-4 flex justify-end">
+      <div className="relative z-10 p-4 flex justify-between items-center">
+        <h2 id="barcode-scanner-title" className="text-white text-lg font-medium sr-only">Barcode Scanner</h2>
+        <div></div> {/* Empty div for flex spacing */}
         <button
           onClick={onClose}
-          className="p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus:ring-2 focus:ring-white focus:ring-opacity-50"
+          className="p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-50"
           aria-label="Close barcode scanner"
         >
           <X size={22} aria-hidden="true" />
@@ -885,7 +899,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
 
       {/* Scan indicator at bottom */}
       {state.hasCamera && state.hasCameraPermission !== 'denied' && !state.isSearching && !state.searchFailed && !scanSucceeded && (
-        <div className="relative z-10 w-full p-4 flex justify-center">
+        <div className="relative z-10 w-full p-4 flex justify-center" aria-hidden="true">
           <div className="w-48 h-1 bg-white/30 rounded-full overflow-hidden">
             <div className="h-full bg-white w-16 rounded-full animate-[scanAnimation_2s_ease-in-out_infinite]"></div>
           </div>
