@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useReducer, useCallback } from 'react';
 import { X, CameraOff, AlertCircle, Loader, Camera, CheckCircle, Square } from 'lucide-react';
-import Quagga from '@ericblade/quagga2';
+import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from 'html5-qrcode';
 import { searchOpenFoodFacts, extractBarcodeFromImage } from '../api/supabase';
 import { validateBarcode, getBarcodeFormat, calculateBarcodeConfidence, attemptBarcodeRepair, areSimilarBarcodes } from '../utils/barcodeUtils';
 import useFocusTrap from '../hooks/useFocusTrap';
@@ -149,7 +149,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   const scannerRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef(false); // Track if we're already processing
   const resizeTimeout = useRef<NodeJS.Timeout | null>(null); // For debouncing resize events
-  const quaggaStreamRef = useRef<MediaStream | null>(null); // Track the active camera stream
+  const qrCodeRef = useRef<Html5Qrcode | null>(null); // Track the HTML5QrCode scanner
   const cameraReadyTimerRef = useRef<NodeJS.Timeout | null>(null); // Timer for camera ready state
   
   // Use focus trap for accessibility
@@ -278,72 +278,16 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     });
   }, []);
 
-  // Handle the detection of barcode in video frames
-  const handleQuaggaProcessed = useCallback((result: any) => {
-    // Only proceed with detection if camera is ready and not already processing
-    if (!state.cameraReady || processingRef.current || scanSucceeded) {
-      return;
-    }
-    
-    // Check if a barcode was located in this frame
-    if (result && result.boxes && result.boxes.length > 0) {
-      console.log('Quagga detected possible barcode regions in frame');
-      
-      // We found a potential barcode, capture the frame for processing
-      if (!processingRef.current) {
-        processingRef.current = true;
-        captureFrame().catch(error => {
-          console.error('Error capturing frame after barcode detection:', error);
-          processingRef.current = false;
-        });
-      }
-    }
-  }, [state.cameraReady, scanSucceeded, captureFrame]);
-
   // Function to properly clean up camera resources
   const stopScanner = useCallback(() => {
-    if (Quagga) {
-      console.log('Stopping Quagga and releasing camera resources...');
+    if (qrCodeRef.current) {
+      console.log('Stopping Html5Qrcode scanner and releasing camera resources...');
       
       try {
-        // Remove event handler first
-        Quagga.offProcessed(handleQuaggaProcessed);
-        
-        // Stop Quagga processing
-        Quagga.stop();
-        
-        // If we have stored the stream reference, stop all tracks
-        if (quaggaStreamRef.current) {
-          quaggaStreamRef.current.getTracks().forEach(track => {
-            console.log('Stopping track:', track.kind);
-            track.stop();
-          });
-          quaggaStreamRef.current = null;
-        }
-        
-        // Find all video elements added by Quagga and stop their tracks
-        if (scannerRef.current) {
-          const videoElements = scannerRef.current.getElementsByTagName('video');
-          
-          for (let i = 0; i < videoElements.length; i++) {
-            const video = videoElements[i];
-            
-            // Get the media stream from the video element
-            const stream = video.srcObject as MediaStream;
-            
-            if (stream) {
-              // Get all tracks and stop them
-              const tracks = stream.getTracks();
-              tracks.forEach(track => {
-                console.log('Stopping video track:', track.kind);
-                track.stop();
-              });
-              
-              // Clear the source object
-              video.srcObject = null;
-            }
-          }
-        }
+        qrCodeRef.current.stop().catch(error => {
+          console.error('Error stopping Html5Qrcode scanner:', error);
+        });
+        qrCodeRef.current = null;
       } catch (err) {
         console.error('Error while stopping camera:', err);
       }
@@ -357,7 +301,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     
     // Reset camera ready state
     dispatch({ type: 'RESET_SCANNER' });
-  }, [handleQuaggaProcessed]);
+  }, []);
   
   // Initialize the barcode scanner
   const initializeScanner = useCallback(async () => {
@@ -385,131 +329,81 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         return;
       }
 
-      console.log('Initializing Quagga scanner...');
+      console.log('Initializing Html5Qrcode scanner...');
       
       // Determine if running on mobile device
       const isMobileDevice = isMobile();
       console.log(`Detected device type: ${isMobileDevice ? 'Mobile' : 'Desktop'}`);
       
-      // Configure scanner based on device type
-      const scannerConfig = {
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: scannerRef.current,
-          constraints: {
-            width: isMobileDevice ? {min: 640, ideal: 1280, max: 1920} : window.innerWidth,
-            height: isMobileDevice ? {min: 480, ideal: 720, max: 1080} : window.innerHeight,
-            facingMode: "environment",
-            aspectRatio: isMobileDevice ? {min: 1, max: 2} : undefined
-          },
-          area: { // Define scanning area as a percentage
-            top: "20%",
-            right: "10%",
-            left: "10%",
-            bottom: "20%"
-          }
-        },
-        locator: {
-          patchSize: "medium",
-          halfSample: isMobileDevice // Better for mobile performance
-        },
-        numOfWorkers: navigator.hardwareConcurrency ? Math.max(Math.min(navigator.hardwareConcurrency - 1, 2), 1) : 2,
-        frequency: 10, // Frame processing frequency
-        decoder: {
-          // Only commenting these out to ensure view-only mode works correctly, uncomment for actual scanning
-          readers: []
-        },
-        locate: true // Enable barcode localization
+      // Create an instance of Html5Qrcode
+      const html5QrCode = new Html5Qrcode("html5-qrcode-reader");
+      qrCodeRef.current = html5QrCode;
+      
+      const config = {
+        fps: 10,
+        qrbox: 250,
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.CODE_93
+        ],
+        rememberLastUsedCamera: true,
+        aspectRatio: isMobileDevice ? 1.333 : undefined
       };
       
-      try {
-        // Initialize Quagga with the configuration
-        await Quagga.init(scannerConfig);
-        
-        // Start the scanner
-        Quagga.start();
-        console.log('Quagga scanner started successfully');
-        dispatch({ type: 'CAMERA_INITIALIZED' });
-        
-        // Store the active stream reference - safely check for CameraAccess and getActiveStream method
-        try {
-          // Check if CameraAccess exists and has getActiveStream method
-          if (Quagga.CameraAccess && typeof Quagga.CameraAccess.getActiveStream === 'function') {
-            const stream = Quagga.CameraAccess.getActiveStream();
-            if (stream) {
-              quaggaStreamRef.current = stream;
-              console.log('Camera stream stored in ref');
-            } else {
-              console.warn('No active stream found after Quagga.start()');
-            }
-          } else {
-            console.warn('Quagga.CameraAccess.getActiveStream is not available in this version');
-            // Find video elements directly and store their streams
-            if (scannerRef.current) {
-              const videoElements = scannerRef.current.getElementsByTagName('video');
-              if (videoElements.length > 0) {
-                quaggaStreamRef.current = videoElements[0].srcObject as MediaStream;
-                console.log('Camera stream stored from video element');
-              }
-            }
-          }
-        } catch (streamError) {
-          console.warn('Error accessing camera stream:', streamError);
-          // Continue without storing the stream reference
-        }
-        
-        // Set up the processed handler for barcode detection
-        Quagga.onProcessed(handleQuaggaProcessed);
-        console.log('Attached onProcessed handler for barcode detection');
-        
-        // Fix styling for video and canvas elements
-        if (scannerRef.current) {
-          const videoEls = scannerRef.current.getElementsByTagName('video');
-          const canvasEls = scannerRef.current.getElementsByTagName('canvas');
-          
-          // Apply styles to video elements
-          if (videoEls.length > 0) {
-            for (let i = 0; i < videoEls.length; i++) {
-              Object.assign(videoEls[i].style, {
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                position: 'absolute',
-                top: '0',
-                left: '0'
-              });
-            }
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        config,
+        (decodedText) => {
+          // Only proceed if camera is ready and not already processing
+          if (!state.cameraReady || processingRef.current || scanSucceeded) {
+            return;
           }
           
-          // Apply styles to canvas elements
-          if (canvasEls.length > 0) {
-            for (let i = 0; i < canvasEls.length; i++) {
-              Object.assign(canvasEls[i].style, {
-                width: '100%',
-                height: '100%',
-                position: 'absolute',
-                top: '0',
-                left: '0'
-              });
-            }
-          }
+          console.log('Html5Qrcode detected barcode:', decodedText);
+          processingRef.current = true;
+          dispatch({ type: 'BARCODE_DETECTION', barcode: decodedText });
+          dispatch({ type: 'BARCODE_CONFIRMED', barcode: decodedText });
+          
+          // Process the detected barcode
+          processBarcode(decodedText);
+        },
+        () => {
+          // QR code scanning is in progress, no need to do anything here
         }
-        
-        // Set a delay before enabling camera ready state
-        // This gives the camera time to properly initialize and display
-        cameraReadyTimerRef.current = setTimeout(() => {
-          dispatch({ type: 'CAMERA_READY' });
-          console.log('Camera ready for processing');
-        }, 1500);
-        
-      } catch (quaggaInitError) {
-        console.error("Error during Quagga initialization:", quaggaInitError);
-        dispatch({ 
-          type: 'CAMERA_INITIALIZATION_FAILED',
-          error: quaggaInitError instanceof Error ? quaggaInitError.message : 'Failed to initialize camera' 
-        });
+      );
+      
+      console.log('Html5Qrcode scanner started successfully');
+      dispatch({ type: 'CAMERA_INITIALIZED' });
+      
+      // Style the scanner element
+      const qrcodeElement = document.getElementById("html5-qrcode-reader");
+      if (qrcodeElement) {
+        // Apply styles to scanner elements
+        const videoElements = qrcodeElement.getElementsByTagName('video');
+        if (videoElements.length > 0) {
+          const video = videoElements[0];
+          Object.assign(video.style, {
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            position: 'absolute',
+            top: '0',
+            left: '0'
+          });
+        }
       }
+      
+      // Set a delay before enabling camera ready state
+      // This gives the camera time to properly initialize and display
+      cameraReadyTimerRef.current = setTimeout(() => {
+        dispatch({ type: 'CAMERA_READY' });
+        console.log('Camera ready for processing');
+      }, 1500);
       
     } catch (err) {
       console.error("Error initializing scanner:", err);
@@ -518,7 +412,45 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         error: err instanceof Error ? err.message : 'Failed to initialize camera' 
       });
     }
-  }, [checkCameraPermissions, isMobile, handleQuaggaProcessed, stopScanner]);
+  }, [checkCameraPermissions, isMobile, stopScanner, state.cameraReady, scanSucceeded]);
+
+  // Process the detected barcode
+  const processBarcode = useCallback(async (barcode: string) => {
+    try {
+      console.log(`Processing detected barcode: ${barcode}`);
+      
+      // Start product search
+      dispatch({ type: 'PRODUCT_SEARCH_START' });
+      
+      // Look up the product name using the Open Food Facts API
+      const productName = await searchOpenFoodFacts(barcode);
+      
+      if (productName) {
+        console.log(`Product found: ${productName}`);
+        dispatch({ type: 'PRODUCT_SEARCH_SUCCESS' });
+        onBarcodeDetected(barcode, productName);
+        setScanSucceeded(true);
+      } else {
+        console.log(`Product with barcode ${barcode} not found`);
+        dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
+        
+        // Wait a moment to show the failure message, then reset
+        setTimeout(() => {
+          dispatch({ type: 'RESET_SCANNER' });
+          processingRef.current = false;
+        }, 2000);
+      }
+    } catch (error) {
+      console.error("Error processing barcode:", error);
+      dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
+      
+      // Wait a moment to show the failure message, then reset
+      setTimeout(() => {
+        dispatch({ type: 'RESET_SCANNER' });
+        processingRef.current = false;
+      }, 2000);
+    }
+  }, [onBarcodeDetected]);
 
   // Process the captured frame for barcode detection
   const processFrame = useCallback(async () => {
@@ -541,38 +473,8 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         dispatch({ type: 'BARCODE_DETECTION', barcode });
         dispatch({ type: 'BARCODE_CONFIRMED', barcode });
         
-        // Start product search
-        dispatch({ type: 'PRODUCT_SEARCH_START' });
-        
-        try {
-          // Look up the product name using the Open Food Facts API
-          const productName = await searchOpenFoodFacts(barcode);
-          
-          if (productName) {
-            console.log(`Product found: ${productName}`);
-            dispatch({ type: 'PRODUCT_SEARCH_SUCCESS' });
-            onBarcodeDetected(barcode, productName);
-            setScanSucceeded(true);
-          } else {
-            console.log(`Product with barcode ${barcode} not found`);
-            dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
-            
-            // Wait a moment to show the failure message, then reset
-            setTimeout(() => {
-              dispatch({ type: 'RESET_SCANNER' });
-              processingRef.current = false;
-            }, 2000);
-          }
-        } catch (error) {
-          console.error("Error processing barcode:", error);
-          dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
-          
-          // Wait a moment to show the failure message, then reset
-          setTimeout(() => {
-            dispatch({ type: 'RESET_SCANNER' });
-            processingRef.current = false;
-          }, 2000);
-        }
+        // Process the detected barcode
+        await processBarcode(barcode);
       } else {
         console.log('No barcode detected by Gemini');
         dispatch({ type: 'PROCESSING_FAILED', error: 'No barcode detected. Please try again.' });
@@ -593,7 +495,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         processingRef.current = false;
       }, 1500);
     }
-  }, [state.frameUrl, dataUrlToFile, onBarcodeDetected]);
+  }, [state.frameUrl, dataUrlToFile, processBarcode]);
 
   // Handle the manual capture button click
   const handleCaptureButtonClick = useCallback(async () => {
@@ -655,6 +557,19 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   // Initialize scanner on mount
   useEffect(() => {
     console.log('Initializing barcode scanner...');
+    
+    // Add a div to hold the scanner before initialization
+    const scannerDiv = document.createElement('div');
+    scannerDiv.id = 'html5-qrcode-reader';
+    scannerDiv.style.width = '100%';
+    scannerDiv.style.height = '100%';
+    
+    // Append the div to the scanner ref
+    if (scannerRef.current) {
+      scannerRef.current.appendChild(scannerDiv);
+    }
+    
+    // Initialize the scanner
     initializeScanner();
     
     // Set up resize handler with debouncing
@@ -690,7 +605,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         clearTimeout(cameraReadyTimerRef.current);
       }
       
-      // Make sure we stop Quagga and release the camera
+      // Make sure we stop the scanner and release the camera
       stopScanner();
     };
   }, [initializeScanner, handleResize, stopScanner]);
@@ -763,28 +678,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           aria-live="polite"
           aria-atomic="true"
         >
-          {/* This is where Quagga will insert the video element */}
-        </div>
-        
-        {/* Enhanced scanning guide overlay */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="relative border-2 border-white border-opacity-70 rounded-lg w-[300px] h-[200px]" aria-hidden="true">
-            {/* Corner markers */}
-            <div className="absolute -top-2 -left-2 w-8 h-8 border-t-2 border-l-2 border-blue-400 rounded-tl-md"></div>
-            <div className="absolute -top-2 -right-2 w-8 h-8 border-t-2 border-r-2 border-blue-400 rounded-tr-md"></div>
-            <div className="absolute -bottom-2 -left-2 w-8 h-8 border-b-2 border-l-2 border-blue-400 rounded-bl-md"></div>
-            <div className="absolute -bottom-2 -right-2 w-8 h-8 border-b-2 border-r-2 border-blue-400 rounded-br-md"></div>
-            
-            {/* Scanning line animation - only show when not processing */}
-            {state.scanActive && !state.isProcessing && !state.isCapturing && !scanSucceeded && (
-              <div className="absolute left-0 right-0 h-0.5 bg-blue-500 opacity-80" 
-                   style={{ 
-                     animation: 'scanLineMove 2s linear infinite',
-                     top: '50%'
-                   }}>
-              </div>
-            )}
-          </div>
+          {/* This is where Html5Qrcode will insert the video element */}
         </div>
 
         {/* Status message */}
@@ -818,7 +712,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
                       ? 'Capturing image...'
                       : state.isProcessing
                         ? 'Analyzing image for barcode...'
-                        : 'Position barcode within frame and tap "Capture"'}
+                        : 'Position barcode within frame to scan'}
             </span>
           </div>
         </div>
@@ -833,19 +727,6 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
           </div>
         )}
 
-        {/* Capture button - only show when not processing and scan hasn't succeeded */}
-        {!state.isProcessing && !state.isSearching && !state.isCapturing && !scanSucceeded && (
-          <div className="absolute bottom-24 left-0 right-0 flex justify-center">
-            <button 
-              onClick={handleCaptureButtonClick}
-              className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 p-6 rounded-full shadow-lg flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
-              aria-label="Capture barcode"
-            >
-              <Camera size={30} aria-hidden="true" />
-            </button>
-          </div>
-        )}
-        
         {/* "Scan Next" button - only show after successful scan */}
         {scanSucceeded && (
           <div className="absolute bottom-24 left-0 right-0 flex justify-center">
@@ -856,15 +737,6 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
               <Camera size={20} className="mr-2" aria-hidden="true" />
               Scan Next Item
             </button>
-          </div>
-        )}
-        
-        {/* Hint text for better user guidance */}
-        {!state.isProcessing && !state.isSearching && !state.isCapturing && !scanSucceeded && (
-          <div className="absolute bottom-16 left-0 right-0 flex justify-center">
-            <div className="text-sm text-white bg-black/60 px-4 py-2 rounded-full">
-              Position barcode in box and tap capture
-            </div>
           </div>
         )}
       </div>
@@ -896,15 +768,6 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       <div className="flex-1 relative overflow-hidden">
         {renderContent()}
       </div>
-
-      {/* Scan indicator at bottom */}
-      {state.hasCamera && state.hasCameraPermission !== 'denied' && !state.isSearching && !state.searchFailed && !scanSucceeded && (
-        <div className="relative z-10 w-full p-4 flex justify-center" aria-hidden="true">
-          <div className="w-48 h-1 bg-white/30 rounded-full overflow-hidden">
-            <div className="h-full bg-white w-16 rounded-full animate-[scanAnimation_2s_ease-in-out_infinite]"></div>
-          </div>
-        </div>
-      )}
 
       <style jsx>{`
         @keyframes scanAnimation {
