@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import BarcodeScanner from "./BarcodeScanner";
+import { logger } from "@/lib/logger";
 
 interface UniversalInputBarProps {
   onSubmit: (value: string) => Promise<void> | void;
@@ -63,7 +64,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
         setInputValue('');
         setIsTyping(false);
       } catch (error) {
-        console.error('Error submitting input:', error);
+        logger.error('Error submitting input:', error);
       } finally {
         setIsLoading(false);
         setIsParsing(false);
@@ -123,14 +124,14 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
     
     // If product name was already found, use it
     if (productName) {
-      console.log(`Product found: ${productName}`);
+      logger.debug(`Product found: ${productName}`);
       setIsParsing(true);
       setIsTyping(true);
       
       try {
         await onSubmit(productName);
       } catch (error) {
-        console.error('Error submitting product from barcode:', error);
+        logger.error('Error submitting product from barcode:', error);
       } finally {
         setIsParsing(false);
         setIsTyping(false);
@@ -138,7 +139,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
     } 
     // Otherwise process the barcode directly
     else if (onBarcodeScanned) {
-      console.log(`Processing barcode: ${barcode}`);
+      logger.debug(`Processing barcode: ${barcode}`);
       setIsParsing(true);
       setIsTyping(true);
       
@@ -171,7 +172,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
       
       // Set up event handlers
       recognition.onstart = () => {
-        console.log('Voice recognition started');
+        logger.debug('Voice recognition started');
         setVoiceState('recording');
         transcriptRef.current = ''; // Reset transcript ref
       };
@@ -181,18 +182,18 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
           .map(result => result[0].transcript)
           .join(' ');
         
-        console.log('Transcript updated:', currentTranscript);
+        logger.debug('Transcript updated:', currentTranscript);
         transcriptRef.current = currentTranscript; // Store in ref for access when stopping
       };
       
       recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
+        logger.error('Speech recognition error:', event.error);
         // No alert for no-speech error, just reset UI
         setVoiceState('inactive');
       };
       
       recognition.onend = () => {
-        console.log('Voice recognition ended');
+        logger.debug('Voice recognition ended');
         
         // We don't process here - processing happens in stopVoiceRecognition
         // When user clicks the stop button
@@ -208,7 +209,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
       recognition.start();
       
     } catch (error) {
-      console.error('Error starting speech recognition:', error);
+      logger.error('Error starting speech recognition:', error);
       alert('Failed to start speech recognition. Please try again.');
       setVoiceState('inactive');
     }
@@ -219,7 +220,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
     if (recognitionRef.current) {
       // Get the current transcript before stopping
       const currentTranscript = transcriptRef.current;
-      console.log('Stopping voice recognition with transcript:', currentTranscript);
+      logger.debug('Stopping voice recognition with transcript:', currentTranscript);
       
       // Stop the recognition
       recognitionRef.current.stop();
@@ -236,7 +237,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
 
   // Process voice input (called after recognition ends with transcript)
   const processVoiceInput = async (text: string) => {
-    console.log('Processing voice input:', text);
+    logger.debug('Processing voice input:', text);
     
     // First update UI to show processing state
     setInputValue(text);
@@ -260,7 +261,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
       // Reset input after successful processing
       setInputValue('');
     } catch (error) {
-      console.error('Error processing voice input:', error);
+      logger.error('Error processing voice input:', error);
     } finally {
       // Reset all states after a short delay to ensure user sees the completion
       setTimeout(() => {

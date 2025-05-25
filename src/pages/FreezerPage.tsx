@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { parseItemText } from '../utils/textParser';
 import { recognizeImageContent, scanBarcode } from '../api/services/images';
 import { toast } from 'react-hot-toast';
+import { logger } from "@/lib/logger";
 
 const FreezerPage: React.FC = () => {
   const { freezerItems } = useStorage();
@@ -48,7 +49,7 @@ const FreezerPage: React.FC = () => {
       await freezerItems.updateItem(updatedItem);
       toast.success(`Updated ${updatedItem.name}`);
     } catch (error) {
-      console.error('Error updating item:', error);
+      logger.error('Error updating item:', error);
       toast.error('Failed to update item');
     } finally {
       setIsEditModalOpen(false);
@@ -81,11 +82,11 @@ const FreezerPage: React.FC = () => {
         await freezerItems.addItem(newItem);
         toast.success(`Added ${newItem.name} to your freezer`);
       } else {
-        console.error('Error: freezerItems.addItem is not a function');
+        logger.error('Error: freezerItems.addItem is not a function');
         toast.error('Failed to add item to freezer');
       }
     } catch (error) {
-      console.error('Error creating freezer item:', error);
+      logger.error('Error creating freezer item:', error);
       toast.error('Failed to process item. Please try again.');
     }
   }, [freezerItems]);
@@ -119,11 +120,11 @@ const FreezerPage: React.FC = () => {
         await freezerItems.addItem(newItem);
         toast.success(`Added ${newItem.name} from image`);
       } else {
-        console.error('Error: freezerItems.addItem is not a function');
+        logger.error('Error: freezerItems.addItem is not a function');
         toast.error('Failed to add item from image');
       }
     } catch (error) {
-      console.error('Error processing image:', error);
+      logger.error('Error processing image:', error);
       toast.error('Failed to process image');
     }
   }, [freezerItems]);
@@ -153,11 +154,11 @@ const FreezerPage: React.FC = () => {
         await freezerItems.addItem(newItem);
         toast.success(`Added ${newItem.name} from barcode`);
       } else {
-        console.error('Error: freezerItems.addItem is not a function');
+        logger.error('Error: freezerItems.addItem is not a function');
         toast.error('Failed to add item from barcode');
       }
     } catch (error) {
-      console.error('Error processing barcode:', error);
+      logger.error('Error processing barcode:', error);
       toast.error('Failed to process barcode');
     }
   }, [freezerItems]);
@@ -178,11 +179,11 @@ const FreezerPage: React.FC = () => {
         await freezerItems.deleteItem(id);
         toast.success(`Removed ${itemToDelete.name}`);
       } else {
-        console.error('Error: freezerItems.deleteItem is not a function');
+        logger.error('Error: freezerItems.deleteItem is not a function');
         toast.error('Failed to remove item');
       }
     } catch (error) {
-      console.error('Error removing item:', error);
+      logger.error('Error removing item:', error);
       toast.error('Failed to remove item');
     }
   }, [freezerItems]);

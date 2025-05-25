@@ -6,6 +6,7 @@ import { foodkeeperData, findBestFoodMatch, getExpirationInfo, calculateExpirati
 import { guessCategory } from '../data/categories';
 import { v4 as uuidv4 } from 'uuid';
 import { UserSettings } from '../types';
+import { logger } from "@/lib/logger";
 
 interface ParsedItemDetails {
   name: string;
@@ -43,14 +44,14 @@ export const parseItemText = async (input: string, userSettings: UserSettings | 
         debugLog('WARNING: AI returned a date in the past:', expirationDate);
         
         // Look up the item in the FoodKeeper database for a better expiration date
-        console.log(`🔍 FoodKeeper lookup for ${result.parsedDetails.name} in category ${result.parsedDetails.category}`);
+        logger.debug(`🔍 FoodKeeper lookup for ${result.parsedDetails.name} in category ${result.parsedDetails.category}`);
         const foodkeeperExpDate = getFoodkeeperExpirationDate(
           result.parsedDetails.name, 
           result.parsedDetails.category, 
           defaultExpirationDays
         );
         
-        console.log(`✅ FoodKeeper result: ${foodkeeperExpDate.toISOString().split('T')[0]} (${Math.round((foodkeeperExpDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days from now)`);
+        logger.debug(`✅ FoodKeeper result: ${foodkeeperExpDate.toISOString().split('T')[0]} (${Math.round((foodkeeperExpDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days from now)`);
         debugLog('Using FoodKeeper expiration date instead:', foodkeeperExpDate);
         
         const parsedDetails = {
@@ -300,7 +301,7 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
 
   // IMPORTANT: Always check FoodKeeper database first for expiration date
   // regardless of whether we found an explicit date in the text
-  console.log(`🔍 FoodKeeper lookup: Looking for "${name}" in category "${category}"`);
+  logger.debug(`🔍 FoodKeeper lookup: Looking for "${name}" in category "${category}"`);
   const foodkeeperExpDate = getFoodkeeperExpirationDate(name, category, defaultExpirationDays);
   
   // Get what would be the default expiration date for comparison
@@ -314,16 +315,16 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
   // Decision logic for which expiration date to use:
   if (explicitExpirationFound && expirationDate) {
     // If the user explicitly specified an expiration, use that
-    console.log(`✅ Using user-specified expiration date: ${expirationDate.toISOString().split('T')[0]} (${Math.round((expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days from now)`);
+    logger.debug(`✅ Using user-specified expiration date: ${expirationDate.toISOString().split('T')[0]} (${Math.round((expirationDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days from now)`);
   } else if (foodkeeperDifferent) {
     // If no explicit date but FoodKeeper has specific data, use that
-    console.log(`✅ SUCCESS: FoodKeeper provided specific data for "${name}": ${foodkeeperExpDate.toISOString().split('T')[0]} (${daysFromNow} days)`);
-    console.log(`✅ FoodKeeper match found for "${name}"`);
-    console.log(`Using FoodKeeper expiration date: ${foodkeeperExpDate.toISOString().split('T')[0]} instead of default: ${defaultExpDate.toISOString().split('T')[0]}`);
+    logger.debug(`✅ SUCCESS: FoodKeeper provided specific data for "${name}": ${foodkeeperExpDate.toISOString().split('T')[0]} (${daysFromNow} days)`);
+    logger.debug(`✅ FoodKeeper match found for "${name}"`);
+    logger.debug(`Using FoodKeeper expiration date: ${foodkeeperExpDate.toISOString().split('T')[0]} instead of default: ${defaultExpDate.toISOString().split('T')[0]}`);
     expirationDate = foodkeeperExpDate;
   } else {
     // Last resort: use the default expiration days
-    console.log(`❌ No specific FoodKeeper data found for "${name}", using default: ${defaultExpirationDays} days`);
+    logger.debug(`❌ No specific FoodKeeper data found for "${name}", using default: ${defaultExpirationDays} days`);
     expirationDate = defaultExpDate;
   }
 
@@ -385,8 +386,8 @@ export const regexParseItemText = (input: string, defaultExpirationDays: number 
  * Helper function to log debug messages for text parsing
  */
 const debugLog = (...args: any[]) => {
-  // Uncomment this line to enable debug logging
-  console.log(...args);
+  // Use our logger utility
+  logger.debug(...args);
 };
 
 /**

@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { parseItemText } from '../utils/textParser';
 import { recognizeImageContent, scanBarcode } from '../api/services/images';
 import { toast } from 'react-hot-toast';
+import { logger } from "@/lib/logger";
 
 const HomePage: React.FC = () => {
   const { 
@@ -113,7 +114,7 @@ const HomePage: React.FC = () => {
       
       toast.success(`Generated ${mockIdeas.length} meal ideas!`);
     } catch (error) {
-      console.error('Error generating meal ideas:', error);
+      logger.error('Error generating meal ideas:', error);
       toast.error('Failed to generate meal ideas');
     } finally {
       setIsGenerating(false);
@@ -142,11 +143,11 @@ const HomePage: React.FC = () => {
         await freezerItems.addItem(newItem);
         toast.success(`Added ${newItem.name} to your freezer`);
       } else {
-        console.error('Error: freezerItems.addItem is not a function');
+        logger.error('Error: freezerItems.addItem is not a function');
         toast.error('Failed to add item to freezer');
       }
     } catch (error) {
-      console.error('Error creating freezer item:', error);
+      logger.error('Error creating freezer item:', error);
       toast.error('Failed to process item. Please try again.');
     }
   }, [freezerItems]);
@@ -180,11 +181,11 @@ const HomePage: React.FC = () => {
         await freezerItems.addItem(newItem);
         toast.success(`Added ${newItem.name} from image`);
       } else {
-        console.error('Error: freezerItems.addItem is not a function');
+        logger.error('Error: freezerItems.addItem is not a function');
         toast.error('Failed to add item from image');
       }
     } catch (error) {
-      console.error('Error processing image:', error);
+      logger.error('Error processing image:', error);
       toast.error('Failed to process image');
     }
   }, [freezerItems]);
@@ -214,11 +215,11 @@ const HomePage: React.FC = () => {
         await freezerItems.addItem(newItem);
         toast.success(`Added ${newItem.name} from barcode`);
       } else {
-        console.error('Error: freezerItems.addItem is not a function');
+        logger.error('Error: freezerItems.addItem is not a function');
         toast.error('Failed to add item from barcode');
       }
     } catch (error) {
-      console.error('Error processing barcode:', error);
+      logger.error('Error processing barcode:', error);
       toast.error('Failed to process barcode');
     }
   }, [freezerItems]);

@@ -1,5 +1,7 @@
-// src/data/foodkeeperData.ts
-// FoodKeeper database expiration data
+/**
+ * Parse text input using Gemini AI if available, with fallback to regex parsing
+ */
+import { logger } from "@/lib/logger";
 
 export interface FoodExpirationInfo {
   minMonths: number;
@@ -647,14 +649,14 @@ export const calculateExpirationDate = (
   category?: string,
   defaultDays: number = 30
 ): Date => {
-  console.log(`FoodKeeper: Looking up expiration data for "${itemName}"${category ? ` (${category})` : ''}`);
+  logger.debug(`FoodKeeper: Looking up expiration data for "${itemName}"${category ? ` (${category})` : ''}`);
   
   const info = getExpirationInfo(itemName, category);
   
   // If no info is found, use the default days
   if (!info) {
-    console.log(`❌ FoodKeeper match not found for "${itemName}"`);
-    console.log(`FoodKeeper: No data found for "${itemName}", using default ${defaultDays} days`);
+    logger.debug(`❌ FoodKeeper match not found for "${itemName}"`);
+    logger.debug(`FoodKeeper: No data found for "${itemName}", using default ${defaultDays} days`);
     const date = new Date();
     date.setDate(date.getDate() + defaultDays);
     return date;
@@ -669,8 +671,8 @@ export const calculateExpirationDate = (
   const date = new Date();
   date.setDate(date.getDate() + days);
   
-  console.log(`✅ FoodKeeper match found for "${itemName}"`);
-  console.log(`FoodKeeper: Found data for "${itemName}": ${info.minMonths}-${info.maxMonths} months, using ${days} days`);
+  logger.debug(`✅ FoodKeeper match found for "${itemName}"`);
+  logger.debug(`FoodKeeper: Found data for "${itemName}": ${info.minMonths}-${info.maxMonths} months, using ${days} days`);
   
   return date;
 };

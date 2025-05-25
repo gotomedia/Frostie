@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from './client';
+import { logger } from "@/lib/logger";
 
 // Helper function to check if string is a valid UUID
 const isValidUUID = (id: string): boolean => {
@@ -11,11 +12,11 @@ export const migrateLocalDataToSupabase = async (): Promise<void> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user for migration');
+    logger.error('No authenticated user for migration');
     return;
   }
   
-  console.log('Migrating local data to Supabase...');
+  logger.debug('Migrating local data to Supabase...');
   
   // Get local data
   const freezerItems = JSON.parse(localStorage.getItem('freezerItems') || '[]');
@@ -46,9 +47,9 @@ export const migrateLocalDataToSupabase = async (): Promise<void> => {
         .insert(dbFreezerItems);
       
       if (freezerError) {
-        console.error('Error migrating freezer items:', freezerError);
+        logger.error('Error migrating freezer items:', freezerError);
       } else {
-        console.log(`Successfully migrated ${dbFreezerItems.length} freezer items`);
+        logger.debug(`Successfully migrated ${dbFreezerItems.length} freezer items`);
       }
     }
     
@@ -70,9 +71,9 @@ export const migrateLocalDataToSupabase = async (): Promise<void> => {
         .insert(dbShoppingItems);
       
       if (shoppingError) {
-        console.error('Error migrating shopping items:', shoppingError);
+        logger.error('Error migrating shopping items:', shoppingError);
       } else {
-        console.log(`Successfully migrated ${dbShoppingItems.length} shopping items`);
+        logger.debug(`Successfully migrated ${dbShoppingItems.length} shopping items`);
       }
     }
     
@@ -107,9 +108,9 @@ export const migrateLocalDataToSupabase = async (): Promise<void> => {
           .eq('user_id', user.user.id);
         
         if (updateError) {
-          console.error('Error updating user settings during migration:', updateError);
+          logger.error('Error updating user settings during migration:', updateError);
         } else {
-          console.log('Successfully updated user settings');
+          logger.debug('Successfully updated user settings');
         }
       } else {
         // Insert new settings
@@ -121,7 +122,7 @@ export const migrateLocalDataToSupabase = async (): Promise<void> => {
           }]);
         
         if (settingsError) {
-          console.error('Error migrating user settings:', settingsError);
+          logger.error('Error migrating user settings:', settingsError);
           
           // If duplicate key, try update instead
           if (settingsError.code === '23505') {
@@ -131,22 +132,22 @@ export const migrateLocalDataToSupabase = async (): Promise<void> => {
               .eq('user_id', user.user.id);
             
             if (fallbackError) {
-              console.error('Error in fallback update during migration:', fallbackError);
+              logger.error('Error in fallback update during migration:', fallbackError);
             } else {
-              console.log('Successfully migrated user settings (fallback method)');
+              logger.debug('Successfully migrated user settings (fallback method)');
             }
           }
         } else {
-          console.log('Successfully migrated user settings');
+          logger.debug('Successfully migrated user settings');
         }
       }
     }
     
-    console.log('Data migration completed');
+    logger.debug('Data migration completed');
     
     // Mark migration as complete
     localStorage.setItem('dataAlreadyMigrated', 'true');
   } catch (error) {
-    console.error('Error during data migration:', error);
+    logger.error('Error during data migration:', error);
   }
 };

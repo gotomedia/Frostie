@@ -1,5 +1,6 @@
 import React, { createContext, useEffect, useState } from 'react';
 import { supabase, setupAuthListener, migrateLocalDataToSupabase } from '../api/supabase';
+import { logger } from "@/lib/logger";
 
 interface AuthContextType {
   user: any | null;
@@ -40,7 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         
         if (data?.session) {
-          console.log('Active session found:', data.session.user.id);
+          logger.debug('Active session found:', data.session.user.id);
           setUser(data.session.user);
           
           // Migrate local data if this is the first sign-in
@@ -49,10 +50,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('dataAlreadyMigrated', 'true');
           }
         } else {
-          console.log('No active session found');
+          logger.debug('No active session found');
         }
       } catch (error) {
-        console.error('Error checking session:', error);
+        logger.error('Error checking session:', error);
         setError((error as Error).message);
       } finally {
         setIsLoading(false);
@@ -61,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Set up auth state listener
     const subscription = setupAuthListener((session) => {
-      console.log('Auth state change detected:', session?.user?.id);
+      logger.debug('Auth state change detected:', session?.user?.id);
       setUser(session?.user || null);
       
       // If user just signed in, migrate local data
@@ -97,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       setUser(data.user);
     } catch (error) {
-      console.error('Error signing in:', error);
+      logger.error('Error signing in:', error);
       setError((error as Error).message);
       throw error;
     } finally {
@@ -128,10 +129,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(data.user);
       } else {
         // Email confirmation is required
-        console.log('Email confirmation required');
+        logger.debug('Email confirmation required');
       }
     } catch (error) {
-      console.error('Error signing up:', error);
+      logger.error('Error signing up:', error);
       setError((error as Error).message);
       throw error;
     } finally {
@@ -158,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // The user will be redirected to Google for authentication
       // The auth state listener will update the user state when they return
     } catch (error) {
-      console.error('Error signing in with Google:', error);
+      logger.error('Error signing in with Google:', error);
       setError((error as Error).message);
       throw error;
     } finally {
@@ -183,7 +184,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Force reload the page to reset all app state
       window.location.href = '/';
     } catch (error) {
-      console.error('Error signing out:', error);
+      logger.error('Error signing out:', error);
       setError((error as Error).message);
       throw error;
     } finally {

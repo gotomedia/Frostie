@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { migrateLocalDataToSupabase } from './migration';
+import { logger } from "@/lib/logger";
 
 // ==================== AUTH STATE CHANGE LISTENER ====================
 
@@ -8,7 +9,7 @@ export const setupAuthListener = (
 ) => {
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     (event, session) => {
-      console.log("Auth state changed:", event, session ? "Session found" : "No session");
+      logger.debug("Auth state changed:", event, session ? "Session found" : "No session");
       callback(session);
     }
   );
@@ -22,24 +23,24 @@ export const handleAuthRedirect = async (): Promise<boolean> => {
   // Check if we have a hash fragment that contains tokens
   if (window.location.hash && window.location.hash.includes('access_token')) {
     try {
-      console.log('Auth redirect detected, attempting to set session...');
+      logger.debug('Auth redirect detected, attempting to set session...');
       
       // Supabase should automatically handle the hash, but we can manually trigger it
       const { data, error } = await supabase.auth.getSession();
       
       if (error) {
-        console.error('Error retrieving session after redirect:', error);
+        logger.error('Error retrieving session after redirect:', error);
         return false;
       }
       
       if (data.session) {
-        console.log('Session successfully established after redirect');
+        logger.debug('Session successfully established after redirect');
         return true;
       } else {
-        console.log('No session found after redirect processing');
+        logger.debug('No session found after redirect processing');
       }
     } catch (err) {
-      console.error('Error handling auth redirect:', err);
+      logger.error('Error handling auth redirect:', err);
     } finally {
       // Remove hash to clean up the URL regardless of outcome
       window.location.hash = '';
@@ -60,7 +61,7 @@ export const signInWithGoogle = async (): Promise<void> => {
   });
   
   if (error) {
-    console.error('Error signing in with Google:', error);
+    logger.error('Error signing in with Google:', error);
     throw error;
   }
 };
@@ -72,7 +73,7 @@ export const signInWithEmail = async (email: string, password: string): Promise<
   });
   
   if (error) {
-    console.error('Error signing in with email:', error);
+    logger.error('Error signing in with email:', error);
     throw error;
   }
   
@@ -81,7 +82,7 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 };
 
 export const signUp = async (email: string, password: string): Promise<void> => {
-  console.log(`Attempting to sign up with email: ${email}`);
+  logger.debug(`Attempting to sign up with email: ${email}`);
 
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -92,19 +93,19 @@ export const signUp = async (email: string, password: string): Promise<void> => 
   });
   
   if (error) {
-    console.error('Error signing up:', error);
+    logger.error('Error signing up:', error);
     throw error;
   }
 
-  console.log('Sign up result:', data);
+  logger.debug('Sign up result:', data);
   
   // In Supabase, signUp doesn't automatically sign in the user if email confirmation is required
   if (data.session) {
-    console.log('Session created, user is signed in');
+    logger.debug('Session created, user is signed in');
     // After successful sign-up with immediate session, migrate local data
     await migrateLocalDataToSupabase();
   } else if (data.user) {
-    console.log('User created but needs email confirmation');
+    logger.debug('User created but needs email confirmation');
     // User needs to confirm email
   }
 };
@@ -113,7 +114,7 @@ export const signOut = async (): Promise<void> => {
   const { error } = await supabase.auth.signOut();
   
   if (error) {
-    console.error('Error signing out:', error);
+    logger.error('Error signing out:', error);
     throw error;
   }
 

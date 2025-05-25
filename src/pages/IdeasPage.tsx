@@ -9,6 +9,7 @@ import { generateMealIdeas } from '../api/services/mealIdeas';
 import { AuthContext } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext'; // Import useSettings
 import { toast } from 'react-hot-toast';
+import { logger } from "@/lib/logger";
 
 const IdeasPage: React.FC = () => {
   const { mealIdeas, freezerItems } = useStorage();
@@ -28,7 +29,7 @@ const IdeasPage: React.FC = () => {
   
   // Process meal ideas to add matchedItems based on freezer inventory
   const processIdeasWithMatchedItems = useCallback((ideas: MealIdea[]) => {
-    console.log('Processing meal ideas to add matched items');
+    logger.debug('Processing meal ideas to add matched items');
     return ideas.map(idea => {
       // For each idea, check which freezer items match the ingredients
       const matchedItems = freezerItems.items.filter(item => {
@@ -40,7 +41,7 @@ const IdeasPage: React.FC = () => {
         );
       }).map(item => item.name);
       
-      console.log(`Idea "${idea.title}" matched with: ${matchedItems.join(', ') || 'none'}`);
+      logger.debug(`Idea "${idea.title}" matched with: ${matchedItems.join(', ') || 'none'}`);
       
       // Return the idea with the matched items
       return {
@@ -53,7 +54,7 @@ const IdeasPage: React.FC = () => {
   // Initialize displayed ideas when meal ideas load and when freezer items change
   useEffect(() => {
     if (!mealIdeas.loading) {
-      console.log('Updating displayed ideas with matched items');
+      logger.debug('Updating displayed ideas with matched items');
       const processedIdeas = processIdeasWithMatchedItems(mealIdeas.items);
       
       setDisplayedIdeas(processedIdeas.map(idea => ({
@@ -103,7 +104,7 @@ const IdeasPage: React.FC = () => {
         const updatedIdea = { ...idea, favorite: false };
         await mealIdeas.updateItem(updatedIdea);
       } catch (error) {
-        console.error('Error updating meal idea:', error);
+        logger.error('Error updating meal idea:', error);
       }
     } else {
       // Add to favorites
@@ -118,7 +119,7 @@ const IdeasPage: React.FC = () => {
         // If the idea exists in storage, update it
         await mealIdeas.updateItem(updatedIdea);
       } catch (error) {
-        console.error('Error updating meal idea:', error);
+        logger.error('Error updating meal idea:', error);
       }
     }
   }, [displayedIdeas, favoriteIdeas, mealIdeas]);
@@ -142,7 +143,7 @@ const IdeasPage: React.FC = () => {
       await mealIdeas.deleteItem(id);
       toast.success(`Removed "${ideaToRemove.title}"`);
     } catch (error) {
-      console.error('Error removing meal idea:', error);
+      logger.error('Error removing meal idea:', error);
       toast.error('Failed to remove meal idea');
       
       // Refresh ideas from storage if there was an error
@@ -162,9 +163,9 @@ const IdeasPage: React.FC = () => {
       setIsGenerating(true);
 
       // Log before generating to debug
-      console.log('🍽️ Generating meal ideas for IdeasPage');
-      console.log('📋 Number of freezer items used to generate ideas:', freezerItems.items.length);
-      console.log('🥬 Freezer item names:', freezerItems.items.map(item => item.name));
+      logger.debug('🍽️ Generating meal ideas for IdeasPage');
+      logger.debug('📋 Number of freezer items used to generate ideas:', freezerItems.items.length);
+      logger.debug('🥬 Freezer item names:', freezerItems.items.map(item => item.name));
       
       // Get dietary preferences from settings context (or local state if specified)
       const dietaryPreferences = {
@@ -174,38 +175,38 @@ const IdeasPage: React.FC = () => {
         dairyFree: settings?.dietary?.dairyFree || dairyFree
       };
       
-      console.log('🥗 Using dietary preferences for generation:', dietaryPreferences);
+      logger.debug('🥗 Using dietary preferences for generation:', dietaryPreferences);
       
       // Call the API service to generate meal ideas with dietary preferences
       const generatedIdeas = await generateMealIdeas(freezerItems.items, dietaryPreferences);
-      console.log('🍲 Generated meal ideas:', generatedIdeas.length);
+      logger.debug('🍲 Generated meal ideas:', generatedIdeas.length);
       
       if (generatedIdeas && generatedIdeas.length > 0) {
-        console.log('💡 Generated meal ideas with matches:');
+        logger.debug('💡 Generated meal ideas with matches:');
         generatedIdeas.forEach(idea => {
-          console.log(`  - ${idea.title}: matched with ${idea.matchedItems?.length || 0} items`);
+          logger.debug(`  - ${idea.title}: matched with ${idea.matchedItems?.length || 0} items`);
         });
         
         // Add the generated ideas to the storage
         for (const idea of generatedIdeas) {
-          console.log('Adding meal idea:', idea.title);
-          console.log('Meal idea ID:', idea.id);
-          console.log('Meal idea ingredients:', idea.ingredients);
+          logger.debug('Adding meal idea:', idea.title);
+          logger.debug('Meal idea ID:', idea.id);
+          logger.debug('Meal idea ingredients:', idea.ingredients);
           
           try {
             await mealIdeas.addItem(idea);
           } catch (error) {
-            console.error(`Error adding meal idea ${idea.title}:`, error);
+            logger.error(`Error adding meal idea ${idea.title}:`, error);
           }
         }
         
         toast.success(`Generated ${generatedIdeas.length} meal ideas!`);
       } else {
-        console.log('No meal ideas were generated');
+        logger.debug('No meal ideas were generated');
         toast.error('Could not generate meal ideas. Please try again.');
       }
     } catch (error) {
-      console.error('Error generating meal ideas:', error);
+      logger.error('Error generating meal ideas:', error);
       toast.error('Failed to generate meal ideas');
     } finally {
       setIsGenerating(false);

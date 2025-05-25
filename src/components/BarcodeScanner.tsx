@@ -4,6 +4,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } fro
 import { searchOpenFoodFacts, extractBarcodeFromImage } from '../api/supabase';
 import { validateBarcode, getBarcodeFormat, calculateBarcodeConfidence, attemptBarcodeRepair, areSimilarBarcodes } from '../utils/barcodeUtils';
 import useFocusTrap from '../hooks/useFocusTrap';
+import { logger } from "@/lib/logger";
 
 interface BarcodeScannerProps {
   onClose: () => void;
@@ -192,7 +193,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       dispatch({ type: 'CAMERA_PERMISSION_GRANTED' });
       return true;
     } catch (err) {
-      console.error("Camera permission error:", err);
+      logger.error("Camera permission error:", err);
       dispatch({ type: 'CAMERA_PERMISSION_DENIED' });
       return false;
     }
@@ -216,11 +217,11 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   // Capture a frame from the video feed
   const captureFrame = useCallback(async (): Promise<string | null> => {
     return new Promise((resolve) => {
-      console.log('Attempting to capture frame from video feed');
+      logger.debug('Attempting to capture frame from video feed');
       dispatch({ type: 'START_CAPTURING' });
       
       if (!scannerRef.current) {
-        console.error('Scanner reference is null');
+        logger.error('Scanner reference is null');
         dispatch({ type: 'PROCESSING_FAILED', error: 'Scanner is not ready' });
         processingRef.current = false;
         resolve(null);
@@ -230,7 +231,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       // Find the video element
       const videoElements = scannerRef.current.getElementsByTagName('video');
       if (!videoElements.length) {
-        console.error('No video element found');
+        logger.error('No video element found');
         dispatch({ type: 'PROCESSING_FAILED', error: 'Camera view is not available' });
         processingRef.current = false;
         resolve(null);
@@ -247,12 +248,12 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
-      console.log(`Canvas dimensions: ${canvas.width}x${canvas.height}, video dimensions: ${video.videoWidth}x${video.videoHeight}`);
+      logger.debug(`Canvas dimensions: ${canvas.width}x${canvas.height}, video dimensions: ${video.videoWidth}x${video.videoHeight}`);
       
       // Draw the current video frame to the canvas
       const context = canvas.getContext('2d');
       if (!context) {
-        console.error('Failed to get canvas context');
+        logger.error('Failed to get canvas context');
         dispatch({ type: 'PROCESSING_FAILED', error: 'Could not prepare image' });
         processingRef.current = false;
         resolve(null);
@@ -266,11 +267,11 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       
       // If we got a data URL, resolve with it
       if (dataUrl && dataUrl.length > 100) {
-        console.log('Successfully captured frame');
+        logger.debug('Successfully captured frame');
         dispatch({ type: 'FRAME_CAPTURED', frameUrl: dataUrl });
         resolve(dataUrl);
       } else {
-        console.error('Failed to capture frame - invalid data URL');
+        logger.error('Failed to capture frame - invalid data URL');
         dispatch({ type: 'PROCESSING_FAILED', error: 'Failed to capture image' });
         processingRef.current = false;
         resolve(null);
@@ -281,15 +282,15 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   // Function to properly clean up camera resources
   const stopScanner = useCallback(() => {
     if (qrCodeRef.current) {
-      console.log('Stopping Html5Qrcode scanner and releasing camera resources...');
+      logger.debug('Stopping Html5Qrcode scanner and releasing camera resources...');
       
       try {
         qrCodeRef.current.stop().catch(error => {
-          console.error('Error stopping Html5Qrcode scanner:', error);
+          logger.error('Error stopping Html5Qrcode scanner:', error);
         });
         qrCodeRef.current = null;
       } catch (err) {
-        console.error('Error while stopping camera:', err);
+        logger.error('Error while stopping camera:', err);
       }
     }
     
@@ -306,7 +307,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   // Initialize the barcode scanner
   const initializeScanner = useCallback(async () => {
     if (!scannerRef.current) {
-      console.error('Scanner reference is null during initialization');
+      logger.error('Scanner reference is null during initialization');
       dispatch({ 
         type: 'CAMERA_INITIALIZATION_FAILED',
         error: 'Scanner element is not ready' 
@@ -329,11 +330,11 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         return;
       }
 
-      console.log('Initializing Html5Qrcode scanner...');
+      logger.debug('Initializing Html5Qrcode scanner...');
       
       // Determine if running on mobile device
       const isMobileDevice = isMobile();
-      console.log(`Detected device type: ${isMobileDevice ? 'Mobile' : 'Desktop'}`);
+      logger.debug(`Detected device type: ${isMobileDevice ? 'Mobile' : 'Desktop'}`);
       
       // Create an instance of Html5Qrcode
       const html5QrCode = new Html5Qrcode("html5-qrcode-reader");
@@ -364,7 +365,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
             return;
           }
           
-          console.log('Html5Qrcode detected barcode:', decodedText);
+          logger.debug('Html5Qrcode detected barcode:', decodedText);
           processingRef.current = true;
           dispatch({ type: 'BARCODE_DETECTION', barcode: decodedText });
           dispatch({ type: 'BARCODE_CONFIRMED', barcode: decodedText });
@@ -377,7 +378,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         }
       );
       
-      console.log('Html5Qrcode scanner started successfully');
+      logger.debug('Html5Qrcode scanner started successfully');
       dispatch({ type: 'CAMERA_INITIALIZED' });
       
       // Style the scanner element
@@ -402,11 +403,11 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       // This gives the camera time to properly initialize and display
       cameraReadyTimerRef.current = setTimeout(() => {
         dispatch({ type: 'CAMERA_READY' });
-        console.log('Camera ready for processing');
+        logger.debug('Camera ready for processing');
       }, 1500);
       
     } catch (err) {
-      console.error("Error initializing scanner:", err);
+      logger.error("Error initializing scanner:", err);
       dispatch({ 
         type: 'CAMERA_INITIALIZATION_FAILED',
         error: err instanceof Error ? err.message : 'Failed to initialize camera' 
@@ -417,7 +418,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
   // Process the detected barcode
   const processBarcode = useCallback(async (barcode: string) => {
     try {
-      console.log(`Processing detected barcode: ${barcode}`);
+      logger.debug(`Processing detected barcode: ${barcode}`);
       
       // Start product search
       dispatch({ type: 'PRODUCT_SEARCH_START' });
@@ -426,12 +427,12 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       const productName = await searchOpenFoodFacts(barcode);
       
       if (productName) {
-        console.log(`Product found: ${productName}`);
+        logger.debug(`Product found: ${productName}`);
         dispatch({ type: 'PRODUCT_SEARCH_SUCCESS' });
         onBarcodeDetected(barcode, productName);
         setScanSucceeded(true);
       } else {
-        console.log(`Product with barcode ${barcode} not found`);
+        logger.debug(`Product with barcode ${barcode} not found`);
         dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
         
         // Wait a moment to show the failure message, then reset
@@ -441,7 +442,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         }, 2000);
       }
     } catch (error) {
-      console.error("Error processing barcode:", error);
+      logger.error("Error processing barcode:", error);
       dispatch({ type: 'PRODUCT_SEARCH_FAILED' });
       
       // Wait a moment to show the failure message, then reset
@@ -460,7 +461,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     }
     
     try {
-      console.log('Processing captured frame with Gemini...');
+      logger.debug('Processing captured frame with Gemini...');
       
       // Convert the data URL to a File object
       const frameFile = dataUrlToFile(state.frameUrl, 'barcode-scan.jpg');
@@ -469,14 +470,14 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       const barcode = await extractBarcodeFromImage(frameFile);
       
       if (barcode) {
-        console.log(`Barcode detected by Gemini: ${barcode}`);
+        logger.debug(`Barcode detected by Gemini: ${barcode}`);
         dispatch({ type: 'BARCODE_DETECTION', barcode });
         dispatch({ type: 'BARCODE_CONFIRMED', barcode });
         
         // Process the detected barcode
         await processBarcode(barcode);
       } else {
-        console.log('No barcode detected by Gemini');
+        logger.debug('No barcode detected by Gemini');
         dispatch({ type: 'PROCESSING_FAILED', error: 'No barcode detected. Please try again.' });
         
         // Reset the processing flag after a delay
@@ -486,7 +487,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
         }, 1500);
       }
     } catch (error) {
-      console.error('Error processing frame:', error);
+      logger.error('Error processing frame:', error);
       dispatch({ type: 'PROCESSING_FAILED', error: 'Failed to process image. Please try again.' });
       
       // Reset the processing flag after a delay
@@ -509,7 +510,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       // Capture frame from video feed
       await captureFrame();
     } catch (error) {
-      console.error('Error capturing frame:', error);
+      logger.error('Error capturing frame:', error);
       dispatch({ type: 'PROCESSING_FAILED', error: 'Failed to capture image' });
       processingRef.current = false;
     }
@@ -556,7 +557,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
 
   // Initialize scanner on mount
   useEffect(() => {
-    console.log('Initializing barcode scanner...');
+    logger.debug('Initializing barcode scanner...');
     
     // Add a div to hold the scanner before initialization
     const scannerDiv = document.createElement('div');
@@ -577,7 +578,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
     
     // Set up orientation change handler
     window.addEventListener('orientationchange', () => {
-      console.log('Orientation changed, reinitializing scanner...');
+      logger.debug('Orientation changed, reinitializing scanner...');
       // Stop scanner
       stopScanner();
       

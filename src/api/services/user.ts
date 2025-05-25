@@ -1,11 +1,12 @@
 import { supabase } from './client';
 import { UserSettings } from '../../types';
+import { logger } from "@/lib/logger";
 
 export const fetchUserSettings = async (): Promise<UserSettings | null> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.log('No authenticated user, checking localStorage');
+    logger.debug('No authenticated user, checking localStorage');
     // Check if we have settings in localStorage
     const storedSettings = localStorage.getItem('userSettings');
     return storedSettings ? JSON.parse(storedSettings) : null;
@@ -19,7 +20,7 @@ export const fetchUserSettings = async (): Promise<UserSettings | null> => {
       .single();
     
     if (error) {
-      console.error('Error fetching user settings:', error);
+      logger.error('Error fetching user settings:', error);
       // Fall back to localStorage
       const storedSettings = localStorage.getItem('userSettings');
       return storedSettings ? JSON.parse(storedSettings) : null;
@@ -50,7 +51,7 @@ export const fetchUserSettings = async (): Promise<UserSettings | null> => {
       }
     };
   } catch (error) {
-    console.error('Error in fetchUserSettings:', error);
+    logger.error('Error in fetchUserSettings:', error);
     const storedSettings = localStorage.getItem('userSettings');
     return storedSettings ? JSON.parse(storedSettings) : null;
   }
@@ -63,7 +64,7 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
   localStorage.setItem('userSettings', JSON.stringify(settings));
   
   if (!user?.user) {
-    console.log('No authenticated user, settings saved to localStorage only');
+    logger.debug('No authenticated user, settings saved to localStorage only');
     return;
   }
   
@@ -77,7 +78,7 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
     
     if (fetchError && fetchError.code !== 'PGRST116') {
       // Handle error, but skip "not found" error as that's expected if no settings exist
-      console.error('Error checking existing settings:', fetchError);
+      logger.error('Error checking existing settings:', fetchError);
       return;
     }
     
@@ -93,18 +94,18 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
     
     if (existingSettings) {
       // Update existing settings
-      console.log(`Updating existing settings for user ${user.user.id}`);
+      logger.debug(`Updating existing settings for user ${user.user.id}`);
       const { error: updateError } = await supabase
         .from('user_settings')
         .update(dbSettings)
         .eq('user_id', user.user.id);
       
       if (updateError) {
-        console.error('Error updating user settings:', updateError);
+        logger.error('Error updating user settings:', updateError);
       }
     } else {
       // Insert new settings
-      console.log(`Creating new settings for user ${user.user.id}`);
+      logger.debug(`Creating new settings for user ${user.user.id}`);
       const { error: insertError } = await supabase
         .from('user_settings')
         .insert([{
@@ -113,23 +114,23 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
         }]);
       
       if (insertError) {
-        console.error('Error inserting user settings:', insertError);
+        logger.error('Error inserting user settings:', insertError);
         
         // If we get a duplicate key error, try updating instead
         if (insertError.code === '23505') { // PostgreSQL unique violation code
-          console.log('Duplicate key detected, trying update instead');
+          logger.debug('Duplicate key detected, trying update instead');
           const { error: fallbackError } = await supabase
             .from('user_settings')
             .update(dbSettings)
             .eq('user_id', user.user.id);
           
           if (fallbackError) {
-            console.error('Error in fallback update of user settings:', fallbackError);
+            logger.error('Error in fallback update of user settings:', fallbackError);
           }
         }
       }
     }
   } catch (error) {
-    console.error('Error in saveUserSettings:', error);
+    logger.error('Error in saveUserSettings:', error);
   }
 };

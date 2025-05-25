@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useReducer } from 'react';
 import { useTheme } from './ThemeContext';
 import { useStorage } from '../store/StorageContext';
 import { UserSettings } from '../api/supabase';
+import { logger } from "@/lib/logger";
 
 // Define the type for the settings state
 interface SettingsState {
@@ -138,7 +139,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           await storageSettings.saveSettings(defaultSettings);
         }
       } catch (error) {
-        console.error('Error loading settings:', error);
+        logger.error('Error loading settings:', error);
         dispatch({ 
           type: 'ERROR', 
           payload: error instanceof Error ? error.message : 'Failed to load settings'
@@ -158,7 +159,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           dispatch({ type: 'SAVE_SUCCESS' });
         }
       } catch (error) {
-        console.error('Error saving settings:', error);
+        logger.error('Error saving settings:', error);
         dispatch({ 
           type: 'ERROR', 
           payload: error instanceof Error ? error.message : 'Failed to save settings'

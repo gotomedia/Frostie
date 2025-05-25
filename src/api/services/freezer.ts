@@ -1,12 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from './client';
 import { FreezerItem } from '../../types';
+import { logger } from "@/lib/logger";
 
 export const fetchFreezerItems = async (): Promise<FreezerItem[]> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.log('No authenticated user, returning empty array');
+    logger.debug('No authenticated user, returning empty array');
     return [];
   }
   
@@ -17,11 +18,11 @@ export const fetchFreezerItems = async (): Promise<FreezerItem[]> => {
     .order('expiry_date', { ascending: true });
   
   if (error) {
-    console.error('Error fetching freezer items:', error);
+    logger.error('Error fetching freezer items:', error);
     throw error;
   }
   
-  console.log('Raw freezer items from DB:', data);
+  logger.debug('Raw freezer items from DB:', data);
   
   // Transform from DB format to app format
   return data.map(item => ({
@@ -42,11 +43,11 @@ export const addFreezerItem = async (item: FreezerItem): Promise<FreezerItem> =>
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to add items');
   }
   
-  console.log('Adding freezer item to Supabase:', item);
+  logger.debug('Adding freezer item to Supabase:', item);
   
   // Ensure the item has a valid UUID before sending to Supabase
   const itemId = item.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id) 
@@ -69,7 +70,7 @@ export const addFreezerItem = async (item: FreezerItem): Promise<FreezerItem> =>
     created_at: new Date().toISOString()
   };
   
-  console.log('DB item being inserted:', dbItem);
+  logger.debug('DB item being inserted:', dbItem);
   
   const { data, error } = await supabase
     .from('freezer_items')
@@ -78,11 +79,11 @@ export const addFreezerItem = async (item: FreezerItem): Promise<FreezerItem> =>
     .single();
   
   if (error) {
-    console.error('Error adding freezer item:', error);
+    logger.error('Error adding freezer item:', error);
     throw error;
   }
   
-  console.log('Successfully added freezer item, DB returned:', data);
+  logger.debug('Successfully added freezer item, DB returned:', data);
   
   // Return the item in app format
   return {
@@ -103,11 +104,11 @@ export const updateFreezerItem = async (item: FreezerItem): Promise<FreezerItem>
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to update items');
   }
   
-  console.log('Updating freezer item in Supabase:', item);
+  logger.debug('Updating freezer item in Supabase:', item);
   
   // Convert from app format to DB format
   const dbItem = {
@@ -121,7 +122,7 @@ export const updateFreezerItem = async (item: FreezerItem): Promise<FreezerItem>
     image_url: item.imageUrl || '' // Include the image URL
   };
   
-  console.log('DB item being updated:', dbItem);
+  logger.debug('DB item being updated:', dbItem);
   
   const { data, error } = await supabase
     .from('freezer_items')
@@ -132,11 +133,11 @@ export const updateFreezerItem = async (item: FreezerItem): Promise<FreezerItem>
     .single();
   
   if (error) {
-    console.error('Error updating freezer item:', error);
+    logger.error('Error updating freezer item:', error);
     throw error;
   }
   
-  console.log('Successfully updated freezer item, DB returned:', data);
+  logger.debug('Successfully updated freezer item, DB returned:', data);
   
   // Return the updated item in app format
   return {
@@ -157,7 +158,7 @@ export const deleteFreezerItem = async (id: string): Promise<void> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to delete items');
   }
   
@@ -168,7 +169,7 @@ export const deleteFreezerItem = async (id: string): Promise<void> => {
     .eq('user_id', user.user.id);
   
   if (error) {
-    console.error('Error deleting freezer item:', error);
+    logger.error('Error deleting freezer item:', error);
     throw error;
   }
 };
@@ -181,7 +182,7 @@ export const subscribeToFreezerItems = (
   const { data: user } = supabase.auth.getUser();
   
   if (!user) {
-    console.log('No authenticated user for real-time subscription');
+    logger.debug('No authenticated user for real-time subscription');
     return null;
   }
   

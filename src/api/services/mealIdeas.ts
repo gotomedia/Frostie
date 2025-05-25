@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from './client';
 import { FreezerItem, MealIdea } from '../../types';
+import { logger } from "@/lib/logger";
 
 export const fetchMealIdeas = async (): Promise<MealIdea[]> => {
   const { data, error } = await supabase
@@ -9,11 +10,11 @@ export const fetchMealIdeas = async (): Promise<MealIdea[]> => {
     .order('created_at', { ascending: false });
   
   if (error) {
-    console.error('Error fetching meal ideas:', error);
+    logger.error('Error fetching meal ideas:', error);
     throw error;
   }
   
-  console.log('Raw meal ideas data from Supabase:', data);
+  logger.debug('Raw meal ideas data from Supabase:', data);
   
   // Transform from DB format to app format
   return data.map(idea => ({
@@ -47,26 +48,26 @@ export const generateMealIdeas = async (
   const apiEndpoint = `${supabase.supabaseUrl}/functions/v1/generate-meal-ideas`;
   
   // Add detailed logs to check each critical variable
-  console.log('🔑 Gemini API key status:', geminiApiKey ? 'Available' : 'Not available');
-  console.log('🔗 Supabase URL used for meal ideas generation:', supabase.supabaseUrl);
-  console.log('🔑 Checking supabaseKey:', supabase.supabaseKey ? 'Present' : 'Missing');
-  console.log('🥗 Dietary preferences for generation:', dietaryPreferences);
+  logger.debug('🔑 Gemini API key status:', geminiApiKey ? 'Available' : 'Not available');
+  logger.debug('🔗 Supabase URL used for meal ideas generation:', supabase.supabaseUrl);
+  logger.debug('🔑 Checking supabaseKey:', supabase.supabaseKey ? 'Present' : 'Missing');
+  logger.debug('🥗 Dietary preferences for generation:', dietaryPreferences);
   
   // Add log to show freezer items being used
-  console.log('🍗 Freezer items being sent to generate meal ideas:', 
+  logger.debug('🍗 Freezer items being sent to generate meal ideas:', 
     freezerItems.map(item => item.name));
-  console.log('📊 Total freezer items count:', freezerItems.length);
+  logger.debug('📊 Total freezer items count:', freezerItems.length);
   
   try {
     // If we have a valid endpoint, make the API call
     if (apiEndpoint) {
-      console.log('🚀 Attempting to call edge function at:', apiEndpoint);
+      logger.debug('🚀 Attempting to call edge function at:', apiEndpoint);
       
       // Get user's dietary preferences if not provided
       let preferences = dietaryPreferences;
       
       if (!preferences) {
-        console.log('⚠️ No dietary preferences provided, fetching from user settings...');
+        logger.debug('⚠️ No dietary preferences provided, fetching from user settings...');
         try {
           const { data: user } = await supabase.auth.getUser();
           if (user?.user) {
@@ -78,9 +79,9 @@ export const generateMealIdeas = async (
             
             if (settings?.dietary) {
               preferences = settings.dietary;
-              console.log('👤 Using user dietary preferences from DB:', preferences);
+              logger.debug('👤 Using user dietary preferences from DB:', preferences);
             } else {
-              console.log('⚠️ No user dietary preferences found in DB, using defaults');
+              logger.debug('⚠️ No user dietary preferences found in DB, using defaults');
               preferences = {
                 vegetarian: false,
                 vegan: false,
@@ -89,7 +90,7 @@ export const generateMealIdeas = async (
               };
             }
           } else {
-            console.log('👤 No authenticated user for dietary preferences');
+            logger.debug('👤 No authenticated user for dietary preferences');
             preferences = {
               vegetarian: false,
               vegan: false,
@@ -98,7 +99,7 @@ export const generateMealIdeas = async (
             };
           }
         } catch (error) {
-          console.error('Error fetching dietary preferences:', error);
+          logger.error('Error fetching dietary preferences:', error);
           preferences = {
             vegetarian: false,
             vegan: false,
@@ -108,12 +109,12 @@ export const generateMealIdeas = async (
         }
       }
 
-      console.log('📡 Making API request with headers:', {
+      logger.debug('📡 Making API request with headers:', {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabase.supabaseKey ? '****' : 'MISSING'}`
       });
       
-      console.log('📦 Request body:', JSON.stringify({
+      logger.debug('📦 Request body:', JSON.stringify({
         freezerItems: freezerItems.map(item => item.name),
         apiKey: geminiApiKey ? '****' : 'MISSING',
         dietaryPreferences: preferences
@@ -132,17 +133,17 @@ export const generateMealIdeas = async (
         })
       });
       
-      console.log('🔄 Response status:', response.status);
+      logger.debug('🔄 Response status:', response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ API call failed with status:', response.status, errorText);
+        logger.error('❌ API call failed with status:', response.status, errorText);
         throw new Error(`API call failed with status: ${response.status}`);
       }
       
-      console.log('✅ API call successful, parsing response');
+      logger.debug('✅ API call successful, parsing response');
       const data = await response.json();
-      console.log('📋 Generated meal ideas:', data.length);
+      logger.debug('📋 Generated meal ideas:', data.length);
       
       // Process the data to add matched items
       const processedIdeas = data.map((idea: MealIdea) => {
@@ -158,7 +159,7 @@ export const generateMealIdeas = async (
           })
           .map(item => item.name);
         
-        console.log(`Idea "${idea.title}" matched with: ${matchedItems.join(', ') || 'none'}`);
+        logger.debug(`Idea "${idea.title}" matched with: ${matchedItems.join(', ') || 'none'}`);
         
         return {
           ...idea,
@@ -168,16 +169,16 @@ export const generateMealIdeas = async (
       
       return processedIdeas;
     } else {
-      console.log('⚠️ No valid API endpoint available, supabaseUrl is:', supabase.supabaseUrl);
+      logger.debug('⚠️ No valid API endpoint available, supabaseUrl is:', supabase.supabaseUrl);
     }
   } catch (error) {
-    console.error('Error generating meal ideas:', error);
-    console.error('Error details:', error instanceof Error ? error.message : String(error));
-    console.error('Error stack:', error instanceof Error && error.stack ? error.stack : 'No stack available');
+    logger.error('Error generating meal ideas:', error);
+    logger.error('Error details:', error instanceof Error ? error.message : String(error));
+    logger.error('Error stack:', error instanceof Error && error.stack ? error.stack : 'No stack available');
   }
   
   // If API call fails or we don't have a valid endpoint, use mock data
-  console.log('🔄 Using mock meal ideas data');
+  logger.debug('🔄 Using mock meal ideas data');
   
   // Mock response for now
   const mockIdeas: MealIdea[] = [
@@ -219,7 +220,7 @@ export const generateMealIdeas = async (
     }
   ];
   
-  console.log('🔄 Returning mock ideas with matched items:', 
+  logger.debug('🔄 Returning mock ideas with matched items:', 
     mockIdeas.map(idea => ({
       title: idea.title,
       matchedItems: idea.matchedItems
@@ -232,7 +233,7 @@ export const generateMealIdeas = async (
 // Function to ensure we don't exceed 9 meal ideas, preserving favorites
 const limitMealIdeas = async (userId: string): Promise<void> => {
   try {
-    console.log('🔢 Checking meal idea count limit (max: 9)');
+    logger.debug('🔢 Checking meal idea count limit (max: 9)');
     
     // Get all meal ideas for this user
     const { data: allIdeas, error } = await supabase
@@ -242,14 +243,14 @@ const limitMealIdeas = async (userId: string): Promise<void> => {
       .order('created_at', { ascending: true }); // Get oldest first
     
     if (error) {
-      console.error('Error fetching meal ideas for limit check:', error);
+      logger.error('Error fetching meal ideas for limit check:', error);
       return;
     }
     
-    console.log(`📊 Current meal idea count: ${allIdeas.length}`);
+    logger.debug(`📊 Current meal idea count: ${allIdeas.length}`);
     
     if (allIdeas.length <= 9) {
-      console.log('✅ Count is within limit, no cleanup needed');
+      logger.debug('✅ Count is within limit, no cleanup needed');
       return;
     }
     
@@ -257,19 +258,19 @@ const limitMealIdeas = async (userId: string): Promise<void> => {
     const favoriteIdeas = allIdeas.filter(idea => idea.favorite);
     const nonFavoriteIdeas = allIdeas.filter(idea => !idea.favorite);
     
-    console.log(`⭐ Favorite ideas: ${favoriteIdeas.length}`);
-    console.log(`🔶 Non-favorite ideas: ${nonFavoriteIdeas.length}`);
+    logger.debug(`⭐ Favorite ideas: ${favoriteIdeas.length}`);
+    logger.debug(`🔶 Non-favorite ideas: ${nonFavoriteIdeas.length}`);
     
     // Calculate how many non-favorites to keep
     const maxNonFavoritesToKeep = 9 - favoriteIdeas.length;
     
     if (maxNonFavoritesToKeep <= 0) {
-      console.log('⚠️ All slots taken by favorites, no room for non-favorites');
+      logger.debug('⚠️ All slots taken by favorites, no room for non-favorites');
       return;
     }
     
     if (nonFavoriteIdeas.length <= maxNonFavoritesToKeep) {
-      console.log('✅ Non-favorite count is within limit, no cleanup needed');
+      logger.debug('✅ Non-favorite count is within limit, no cleanup needed');
       return;
     }
     
@@ -278,7 +279,7 @@ const limitMealIdeas = async (userId: string): Promise<void> => {
       .slice(0, nonFavoriteIdeas.length - maxNonFavoritesToKeep)
       .map(idea => idea.id);
     
-    console.log(`🗑️ Deleting ${nonFavoritesToDelete.length} oldest non-favorite ideas`);
+    logger.debug(`🗑️ Deleting ${nonFavoritesToDelete.length} oldest non-favorite ideas`);
     
     if (nonFavoritesToDelete.length > 0) {
       const { error: deleteError } = await supabase
@@ -287,13 +288,13 @@ const limitMealIdeas = async (userId: string): Promise<void> => {
         .in('id', nonFavoritesToDelete);
       
       if (deleteError) {
-        console.error('Error deleting excess meal ideas:', deleteError);
+        logger.error('Error deleting excess meal ideas:', deleteError);
       } else {
-        console.log('✅ Successfully deleted excess meal ideas');
+        logger.debug('✅ Successfully deleted excess meal ideas');
       }
     }
   } catch (error) {
-    console.error('Error in limitMealIdeas:', error);
+    logger.error('Error in limitMealIdeas:', error);
   }
 };
 
@@ -301,7 +302,7 @@ export const updateMealIdea = async (idea: MealIdea): Promise<MealIdea> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to update meal ideas');
   }
   
@@ -327,7 +328,7 @@ export const updateMealIdea = async (idea: MealIdea): Promise<MealIdea> => {
     .single();
   
   if (error) {
-    console.error('Error updating meal idea:', error);
+    logger.error('Error updating meal idea:', error);
     throw error;
   }
   
@@ -352,7 +353,7 @@ export const addMealIdea = async (idea: MealIdea): Promise<MealIdea> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to add meal ideas');
   }
   
@@ -378,7 +379,7 @@ export const addMealIdea = async (idea: MealIdea): Promise<MealIdea> => {
     created_at: new Date().toISOString()
   };
   
-  console.log('📝 Adding meal idea to Supabase:', {
+  logger.debug('📝 Adding meal idea to Supabase:', {
     title: idea.title,
     user_id: user.user.id,
     ingredients: idea.ingredients.length,
@@ -392,14 +393,14 @@ export const addMealIdea = async (idea: MealIdea): Promise<MealIdea> => {
     .single();
   
   if (error) {
-    console.error('Error adding meal idea:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
-    console.error('Error details:', error.details);
+    logger.error('Error adding meal idea:', error);
+    logger.error('Error code:', error.code);
+    logger.error('Error message:', error.message);
+    logger.error('Error details:', error.details);
     throw error;
   }
   
-  console.log('✅ Successfully added meal idea to Supabase:', data.title);
+  logger.debug('✅ Successfully added meal idea to Supabase:', data.title);
   
   // After adding a meal idea, ensure we're not exceeding the limit of 9 ideas
   await limitMealIdeas(user.user.id);
@@ -425,7 +426,7 @@ export const deleteMealIdea = async (id: string): Promise<void> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to delete meal ideas');
   }
   
@@ -436,7 +437,7 @@ export const deleteMealIdea = async (id: string): Promise<void> => {
     .eq('user_id', user.user.id);
   
   if (error) {
-    console.error('Error deleting meal idea:', error);
+    logger.error('Error deleting meal idea:', error);
     throw error;
   }
 };

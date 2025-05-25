@@ -4,6 +4,7 @@ import { FreezerItem } from '../types';
 import AccessibleDatepicker from './AccessibleDatepicker';
 import { getCategories } from '../data/categories';
 import useFocusTrap from '../hooks/useFocusTrap';
+import { logger } from "@/lib/logger";
 
 interface EditFreezerItemModalProps {
   item: FreezerItem;

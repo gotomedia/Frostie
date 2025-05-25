@@ -1,12 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from './client';
 import { ShoppingItem } from '../../types';
+import { logger } from "@/lib/logger";
 
 export const fetchShoppingItems = async (): Promise<ShoppingItem[]> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.log('No authenticated user, returning empty array');
+    logger.debug('No authenticated user, returning empty array');
     return [];
   }
   
@@ -17,7 +18,7 @@ export const fetchShoppingItems = async (): Promise<ShoppingItem[]> => {
     .order('created_at', { ascending: false });
   
   if (error) {
-    console.error('Error fetching shopping items:', error);
+    logger.error('Error fetching shopping items:', error);
     throw error;
   }
   
@@ -34,7 +35,7 @@ export const addShoppingItem = async (item: ShoppingItem): Promise<ShoppingItem>
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to add items');
   }
   
@@ -60,7 +61,7 @@ export const addShoppingItem = async (item: ShoppingItem): Promise<ShoppingItem>
     .single();
   
   if (error) {
-    console.error('Error adding shopping item:', error);
+    logger.error('Error adding shopping item:', error);
     throw error;
   }
   
@@ -77,7 +78,7 @@ export const updateShoppingItem = async (item: ShoppingItem): Promise<ShoppingIt
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to update items');
   }
   
@@ -98,7 +99,7 @@ export const updateShoppingItem = async (item: ShoppingItem): Promise<ShoppingIt
     .single();
   
   if (error) {
-    console.error('Error updating shopping item:', error);
+    logger.error('Error updating shopping item:', error);
     throw error;
   }
   
@@ -115,7 +116,7 @@ export const deleteShoppingItem = async (id: string): Promise<void> => {
   const { data: user } = await supabase.auth.getUser();
   
   if (!user?.user) {
-    console.error('No authenticated user');
+    logger.error('No authenticated user');
     throw new Error('User must be authenticated to delete items');
   }
   
@@ -126,7 +127,7 @@ export const deleteShoppingItem = async (id: string): Promise<void> => {
     .eq('user_id', user.user.id);
   
   if (error) {
-    console.error('Error deleting shopping item:', error);
+    logger.error('Error deleting shopping item:', error);
     throw error;
   }
 };
@@ -139,7 +140,7 @@ export const subscribeToShoppingItems = (
   const { data: user } = supabase.auth.getUser();
   
   if (!user) {
-    console.log('No authenticated user for real-time subscription');
+    logger.debug('No authenticated user for real-time subscription');
     return null;
   }
   

@@ -1,6 +1,7 @@
 /**
  * Utility functions for local storage operations
  */
+import { logger } from "@/lib/logger";
 
 // Get items from localStorage with a given key
 export const getStoredItems = (key: string): any[] => {
@@ -18,7 +19,7 @@ export const getStoredItems = (key: string): any[] => {
       });
     }
   } catch (error) {
-    console.error(`Error retrieving ${key} from localStorage:`, error);
+    logger.error(`Error retrieving ${key} from localStorage:`, error);
   }
   return [];
 };
@@ -28,7 +29,7 @@ export const storeItems = (key: string, items: any[]): void => {
   try {
     localStorage.setItem(key, JSON.stringify(items));
   } catch (error) {
-    console.error(`Error storing ${key} in localStorage:`, error);
+    logger.error(`Error storing ${key} in localStorage:`, error);
   }
 };
 
@@ -37,7 +38,7 @@ export const removeStoredItems = (key: string): void => {
   try {
     localStorage.removeItem(key);
   } catch (error) {
-    console.error(`Error removing ${key} from localStorage:`, error);
+    logger.error(`Error removing ${key} from localStorage:`, error);
   }
 };
 
@@ -49,6 +50,6 @@ export const clearAllStoredData = (): void => {
     localStorage.removeItem('mealIdeas');
     localStorage.removeItem('userSettings');
   } catch (error) {
-    console.error('Error clearing all data from localStorage:', error);
+    logger.error('Error clearing all data from localStorage:', error);
   }
 };

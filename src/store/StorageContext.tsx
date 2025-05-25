@@ -17,6 +17,7 @@ import { FreezerItem, ShoppingItem, MealIdea, UserSettings } from '../types';
 import { supabase } from '../api/services/client';
 import { AuthContext } from '../contexts/AuthContext';
 import { debounce } from '../lib/utils';
+import { logger } from "@/lib/logger";
 
 // Define the Storage context type
 interface StorageContextType {
@@ -130,7 +131,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
   useEffect(() => {
     if (authLoading) return;
     
-    console.log('Setting up storage providers, user:', user?.id);
+    logger.debug('Setting up storage providers, user:', user?.id);
     
     if (user) {
       // User is authenticated, use Supabase providers
@@ -158,7 +159,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const items = await freezerStorage.getItems();
         setFreezerItems(items);
       } catch (err) {
-        console.error('Error refreshing freezer items:', err);
+        logger.error('Error refreshing freezer items:', err);
       }
     }, 500),
     [freezerStorage]
@@ -170,7 +171,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const items = await shoppingStorage.getItems();
         setShoppingItems(items);
       } catch (err) {
-        console.error('Error refreshing shopping items:', err);
+        logger.error('Error refreshing shopping items:', err);
       }
     }, 500),
     [shoppingStorage]
@@ -182,7 +183,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const items = await mealStorage.getItems();
         setMealIdeas(items);
       } catch (err) {
-        console.error('Error refreshing meal ideas:', err);
+        logger.error('Error refreshing meal ideas:', err);
       }
     }, 500),
     [mealStorage]
@@ -197,7 +198,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const items = await freezerStorage.getItems();
         setFreezerItems(items);
       } catch (err) {
-        console.error('Error loading freezer items:', err);
+        logger.error('Error loading freezer items:', err);
         setFreezerError(err as Error);
       } finally {
         setFreezerLoading(false);
@@ -218,7 +219,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const items = await shoppingStorage.getItems();
         setShoppingItems(items);
       } catch (err) {
-        console.error('Error loading shopping items:', err);
+        logger.error('Error loading shopping items:', err);
         setShoppingError(err as Error);
       } finally {
         setShoppingLoading(false);
@@ -239,7 +240,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const items = await mealStorage.getItems();
         setMealIdeas(items);
       } catch (err) {
-        console.error('Error loading meal ideas:', err);
+        logger.error('Error loading meal ideas:', err);
         setMealError(err as Error);
       } finally {
         setMealLoading(false);
@@ -260,7 +261,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
         const settings = await settingsStorage.getSettings();
         setUserSettings(settings || defaultUserSettings);
       } catch (err) {
-        console.error('Error loading user settings:', err);
+        logger.error('Error loading user settings:', err);
         setSettingsError(err as Error);
         // Fall back to default settings
         setUserSettings(defaultUserSettings);
@@ -283,7 +284,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
       setFreezerItems(items);
       return items;
     } catch (err) {
-      console.error('Error loading freezer items:', err);
+      logger.error('Error loading freezer items:', err);
       setFreezerError(err as Error);
       throw err;
     } finally {
@@ -307,7 +308,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert optimistic update on error
       debouncedRefreshFreezerItems();
-      console.error('Error adding freezer item:', err);
+      logger.error('Error adding freezer item:', err);
       throw err;
     }
   };
@@ -328,7 +329,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert optimistic update on error
       debouncedRefreshFreezerItems();
-      console.error('Error updating freezer item:', err);
+      logger.error('Error updating freezer item:', err);
       throw err;
     }
   };
@@ -347,7 +348,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert optimistic update on error
       debouncedRefreshFreezerItems();
-      console.error('Error deleting freezer item:', err);
+      logger.error('Error deleting freezer item:', err);
       throw err;
     }
   };
@@ -356,7 +357,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     try {
       return await freezerStorage.getExpiringItems(days);
     } catch (err) {
-      console.error('Error getting expiring freezer items:', err);
+      logger.error('Error getting expiring freezer items:', err);
       throw err;
     }
   };
@@ -370,7 +371,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
       setShoppingItems(items);
       return items;
     } catch (err) {
-      console.error('Error loading shopping items:', err);
+      logger.error('Error loading shopping items:', err);
       setShoppingError(err as Error);
       throw err;
     } finally {
@@ -394,7 +395,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert on error
       debouncedRefreshShoppingItems();
-      console.error('Error adding shopping item:', err);
+      logger.error('Error adding shopping item:', err);
       throw err;
     }
   };
@@ -415,7 +416,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert on error
       debouncedRefreshShoppingItems();
-      console.error('Error updating shopping item:', err);
+      logger.error('Error updating shopping item:', err);
       throw err;
     }
   };
@@ -434,7 +435,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert on error
       debouncedRefreshShoppingItems();
-      console.error('Error deleting shopping item:', err);
+      logger.error('Error deleting shopping item:', err);
       throw err;
     }
   };
@@ -443,7 +444,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     try {
       return await shoppingStorage.getCompletedItems();
     } catch (err) {
-      console.error('Error getting completed shopping items:', err);
+      logger.error('Error getting completed shopping items:', err);
       throw err;
     }
   };
@@ -452,7 +453,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     try {
       return await shoppingStorage.getIncompleteItems();
     } catch (err) {
-      console.error('Error getting incomplete shopping items:', err);
+      logger.error('Error getting incomplete shopping items:', err);
       throw err;
     }
   };
@@ -466,7 +467,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
       setMealIdeas(items);
       return items;
     } catch (err) {
-      console.error('Error loading meal ideas:', err);
+      logger.error('Error loading meal ideas:', err);
       setMealError(err as Error);
       throw err;
     } finally {
@@ -487,7 +488,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
       setMealIdeas(newItems);
       
       // Log the newIdea object to confirm user_id is present
-      console.log('Adding meal idea with user_id:', newIdea);
+      logger.debug('Adding meal idea with user_id:', newIdea);
       
       // Perform actual operation
       const newItem = await mealStorage.addItem(newIdea);
@@ -499,7 +500,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert on error
       debouncedRefreshMealIdeas();
-      console.error('Error adding meal idea:', err);
+      logger.error('Error adding meal idea:', err);
       throw err;
     }
   };
@@ -520,7 +521,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert on error
       debouncedRefreshMealIdeas();
-      console.error('Error updating meal idea:', err);
+      logger.error('Error updating meal idea:', err);
       throw err;
     }
   };
@@ -539,7 +540,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     } catch (err) {
       // Revert on error
       debouncedRefreshMealIdeas();
-      console.error('Error deleting meal idea:', err);
+      logger.error('Error deleting meal idea:', err);
       throw err;
     }
   };
@@ -548,7 +549,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
     try {
       return await mealStorage.getFavorites();
     } catch (err) {
-      console.error('Error getting favorite meal ideas:', err);
+      logger.error('Error getting favorite meal ideas:', err);
       throw err;
     }
   };
@@ -562,7 +563,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
       setUserSettings(settings || defaultUserSettings);
       return settings;
     } catch (err) {
-      console.error('Error loading user settings:', err);
+      logger.error('Error loading user settings:', err);
       setSettingsError(err as Error);
       throw err;
     } finally {
@@ -585,7 +586,7 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
       } catch {
         // If refresh fails, keep the optimistic update
       }
-      console.error('Error saving user settings:', err);
+      logger.error('Error saving user settings:', err);
       throw err;
     }
   };
