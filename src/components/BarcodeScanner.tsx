@@ -341,7 +341,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
       
       const config = {
         fps: 10,
-        qrbox: 250,
+        qrbox: 320,
         formatsToSupport: [
           Html5QrcodeSupportedFormats.EAN_13,
           Html5QrcodeSupportedFormats.EAN_8,
@@ -724,6 +724,19 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onClose, onBarcodeDetec
               <AlertCircle size={16} className="inline-block mr-1" aria-hidden="true" />
               <span>{state.error}</span>
             </div>
+          </div>
+        )}
+
+        {/* Capture button - only show when not processing and scan hasn't succeeded */}
+        {!state.isProcessing && !state.isSearching && !state.isCapturing && !scanSucceeded && (
+          <div className="absolute bottom-24 left-0 right-0 flex justify-center">
+            <button 
+              onClick={handleCaptureButtonClick}
+              className="bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 p-6 rounded-full shadow-lg flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:outline-none"
+              aria-label="Capture barcode"
+            >
+              <Camera size={30} aria-hidden="true" />
+            </button>
           </div>
         )}
 
