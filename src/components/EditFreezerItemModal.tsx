@@ -32,6 +32,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
   const [tags, setTags] = useState<string[]>(item.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [imageUrl, setImageUrl] = useState(item.imageUrl || '');
+  const [imageError, setImageError] = useState(false);
 
   // Use the focus trap hook for keyboard navigation
   const focusTrapRef = useFocusTrap(isOpen);
@@ -56,6 +57,7 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       setTags(item.tags || []);
       setImageUrl(item.imageUrl || '');
       setTagInput('');
+      setImageError(false);
     }
   }, [isOpen, item]);
 
@@ -122,6 +124,12 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
       document.removeEventListener('closeFocusTrap', handleCloseFocusTrap);
     };
   }, [isOpen, onClose]);
+
+  // Handle image error
+  const handleImageError = () => {
+    setImageError(true);
+    logger.error(`Failed to load image: ${imageUrl}`);
+  };
 
   if (!isOpen) return null;
   
@@ -235,7 +243,10 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                         type="text"
                         id={`imageUrl-${item.id}`}
                         value={imageUrl}
-                        onChange={(e) => setImageUrl(e.target.value)}
+                        onChange={(e) => {
+                          setImageUrl(e.target.value);
+                          setImageError(false);
+                        }}
                         placeholder="https://example.com/image.jpg"
                         className="hidden w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:border-blue-500 dark:bg-slate-700 dark:text-slate-100"
                         aria-label="Image URL"
@@ -243,17 +254,14 @@ const EditFreezerItemModal: React.FC<EditFreezerItemModalProps> = ({
                       <Image className="absolute right-3 top-2.5 text-slate-400 dark:text-slate-500" size={16} aria-hidden="true" />
                     </div>
                   </div>
-                  {imageUrl && (
+                  {imageUrl && !imageError && (
                     <div className="mt-2">
                       <div className="relative w-full h-32 bg-slate-100 dark:bg-slate-700 rounded-md overflow-hidden">
                         <img 
                           src={imageUrl} 
                           alt={`${name} preview`}
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            // If image fails to load, hide it
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
+                          onError={handleImageError}
                         />
                       </div>
                     </div>

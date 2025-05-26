@@ -30,6 +30,9 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
 
   const expirationText = daysLeft <= 0 ? 'Expired' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} until expiration`;
   const cardId = `freezer-item-${item.id}`;
+  
+  // State to handle image loading errors
+  const [imageError, setImageError] = React.useState(false);
 
   return (
     <div 
@@ -82,18 +85,15 @@ const FreezerItemCard: React.FC<FreezerItemCardProps> = ({ item, onRemove, onEdi
           </div>
         )}
         
-        {/* Display image thumbnail if available */}
-        {item.imageUrl && (
+        {/* Display image thumbnail if available and hasn't errored */}
+        {item.imageUrl && !imageError && (
           <div className="mt-2 flex items-center gap-2">
             <div className="w-10 h-10 rounded overflow-hidden bg-slate-100 dark:bg-slate-700 flex-shrink-0">
               <img 
                 src={item.imageUrl} 
                 alt="" 
                 className="w-full h-full object-cover"
-                onError={(e) => {
-                  // Hide broken images
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
+                onError={() => setImageError(true)}
               />
             </div>
             <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
