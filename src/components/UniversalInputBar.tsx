@@ -470,7 +470,7 @@ const UniversalInputBar: React.FC<UniversalInputBarProps> = ({
         />
       )}
 
-      <style jsx>{`
+      <style jsx="true">{`
         .input-bar-container {
           background: rgba(255, 255, 255, 0.8);
           backdrop-filter: blur(10px);
